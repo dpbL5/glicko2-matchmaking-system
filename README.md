@@ -1,4 +1,4 @@
-# Project Name
+# Glicko2 Matchmaking System
 
 [![Stars](https://img.shields.io/github/stars/hungdn1701/microservices-assignment-starter?style=social)](https://github.com/hungdn1701/microservices-assignment-starter/stargazers)
 [![Forks](https://img.shields.io/github/forks/hungdn1701/microservices-assignment-starter?style=social)](https://github.com/hungdn1701/microservices-assignment-starter/network/members)
@@ -6,7 +6,7 @@
 
 > Brief description of the business process being automated and the service-oriented solution.
 
-> **New to this repo?** See [`GETTING_STARTED.md`](GETTING_STARTED.md) for setup instructions, workflow guide, and submission checklist.
+<!-- > **New to this repo?** See [`GETTING_STARTED.md`](GETTING_STARTED.md) for setup instructions, workflow guide, and submission checklist. -->
 
 ---
 
@@ -14,13 +14,13 @@
 
 | Name | Student ID | Role | Contribution |
 |------|------------|------|-------------|
-|      |            |      |             |
+|Dương Phan Bảo Linh|B22DCCN485|All|All|
 
 ---
 
 ## Business Process
 
-*(Summarize the **one business process** being automated — domain, actors, scope. Example: "Customer places an order and receives delivery in the Online Food Delivery domain.")*
+Player queues up for a match, the matchmaking system begins searching for suitable opponents. It uses the player's skill rating as the primary criterion, looking for other players with similar ratings. When a suitable group of players is found, the system creates a match. It then assigns each player to a team, trying to balance the overall skill level of both teams. After the match, recalculate rating base on the match result.
 
 ---
 
