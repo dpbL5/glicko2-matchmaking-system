@@ -1,0 +1,136 @@
+openapi: 3.0.3
+info:
+  title: Rating Service API
+  description: |
+    API specification for the rating service.
+  version: 1.0.0
+
+servers:
+  - url: http://localhost:5002
+    description: Local development
+
+paths:
+  /health:
+    get:
+      summary: Health check
+      operationId: healthCheck
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+
+  /rating/{id}:
+    get:
+      summary: Get player rating
+      operationId: getPlayerRating
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Rating record
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlayerRating'
+
+    post:
+      summary: Update player rating
+      operationId: updatePlayerRating
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RatingUpdateRequest'
+      responses:
+        '200':
+          description: Rating updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlayerRating'
+
+  /glicko2:
+    post:
+      summary: Calculate player rating using Glicko2 model
+      operationId: calculateGlicko2Rating
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Glicko2Request'
+      responses:
+        '200':
+          description: Calculated ratings
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Glicko2Response'
+
+components:
+  schemas:
+    PlayerRating:
+      type: object
+      properties:
+        playerId:
+          type: string
+        rating:
+          type: number
+        rd:
+          type: number
+        volatility:
+          type: number
+    RatingUpdateRequest:
+      type: object
+      required:
+        - rating
+      properties:
+        rating:
+          type: number
+        rd:
+          type: number
+        volatility:
+          type: number
+    Glicko2Request:
+      type: object
+      required:
+        - playerId
+        - matchResult
+      properties:
+        playerId:
+          type: string
+        matchResult:
+          type: string
+        opponentRatings:
+          type: array
+          items:
+            type: number
+    Glicko2Response:
+      type: object
+      properties:
+        playerId:
+          type: string
+        rating:
+          type: number
+        rd:
+          type: number
+        volatility:
+          type: number

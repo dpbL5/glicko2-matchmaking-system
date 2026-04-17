@@ -1,0 +1,73 @@
+openapi: 3.0.3
+info:
+  title: Glicko2 Rating Service API
+  description: |
+    API specification for the Glicko2 rating calculation service.
+  version: 1.0.0
+
+servers:
+  - url: http://localhost:5003
+    description: Local development
+
+paths:
+  /health:
+    get:
+      summary: Health check
+      operationId: healthCheck
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+
+  /glicko2:
+    post:
+      summary: Calculate player rating using Glicko2 model
+      operationId: calculateGlicko2Rating
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Glicko2Request'
+      responses:
+        '200':
+          description: Calculated rating values
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Glicko2Response'
+
+components:
+  schemas:
+    Glicko2Request:
+      type: object
+      required:
+        - playerId
+        - matchResult
+      properties:
+        playerId:
+          type: string
+        matchResult:
+          type: string
+        opponentRatings:
+          type: array
+          items:
+            type: number
+    Glicko2Response:
+      type: object
+      properties:
+        playerId:
+          type: string
+        rating:
+          type: number
+        rd:
+          type: number
+        volatility:
+          type: number

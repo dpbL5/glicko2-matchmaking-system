@@ -68,8 +68,12 @@ microservices-assignment-starter/
 │   ├── architecture.md             # Architecture patterns & deployment
 │   ├── asset/                      # Images, diagrams, visual assets
 │   └── api-specs/                  # OpenAPI 3.0 specifications
-│       ├── service-a.yaml
-│       └── service-b.yaml
+│       ├── player-service.yaml
+│       ├── match-service.yaml
+│       ├── queue-process-service.yaml
+│       ├── matchmaking-process-service.yaml
+│       ├── rating-service.yaml
+│       └── glicko2-rating-service.yaml
 │
 ├── frontend/                       # Frontend application
 │   ├── Dockerfile

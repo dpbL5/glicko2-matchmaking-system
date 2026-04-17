@@ -1,0 +1,129 @@
+openapi: 3.0.3
+info:
+  title: Match Service API
+  description: |
+    API specification for match record creation and result updates.
+  version: 1.0.0
+
+servers:
+  - url: http://localhost:5001
+    description: Local development
+
+paths:
+  /health:
+    get:
+      summary: Health check
+      operationId: healthCheck
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+
+  /match:
+    post:
+      summary: Create match record
+      operationId: createMatch
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MatchCreateRequest'
+      responses:
+        '201':
+          description: Match created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Match'
+
+  /match/{id}:
+    get:
+      summary: Get match by id
+      operationId: getMatchById
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Match record
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Match'
+        '404':
+          description: Match not found
+
+  /match/{id}/result:
+    post:
+      summary: Update match status and result
+      operationId: submitMatchResult
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MatchResultRequest'
+      responses:
+        '200':
+          description: Match result accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MatchResultResponse'
+
+components:
+  schemas:
+    MatchCreateRequest:
+      type: object
+      required:
+        - playerIds
+      properties:
+        playerIds:
+          type: array
+          items:
+            type: string
+        queueId:
+          type: string
+    Match:
+      type: object
+      properties:
+        id:
+          type: string
+        status:
+          type: string
+          enum: [PENDING, IN_PROGRESS, FINISHED]
+        playerIds:
+          type: array
+          items:
+            type: string
+    MatchResultRequest:
+      type: object
+      properties:
+        winner:
+          type: string
+        result:
+          type: string
+    MatchResultResponse:
+      type: object
+      properties:
+        matchId:
+          type: string
+        status:
+          type: string

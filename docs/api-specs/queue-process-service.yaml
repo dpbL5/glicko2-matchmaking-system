@@ -1,0 +1,142 @@
+openapi: 3.0.3
+info:
+  title: Queue Process Service API
+  description: |
+    API specification for queue enrollment, search, and dequeue operations.
+  version: 1.0.0
+
+servers:
+  - url: http://localhost:5001
+    description: Local development
+
+paths:
+  /health:
+    get:
+      summary: Health check
+      operationId: healthCheck
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+
+  /queue:
+    post:
+      summary: Enqueue player to pool
+      operationId: enqueuePlayer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QueueEnqueueRequest'
+      responses:
+        '201':
+          description: Player queued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QueueTicket'
+
+  /queue/{playerId}:
+    get:
+      summary: Get queue status by player id
+      operationId: getQueueStatus
+      parameters:
+        - name: playerId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Queue ticket
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QueueTicket'
+        '404':
+          description: Queue ticket not found
+    delete:
+      summary: Dequeue player from pool
+      operationId: dequeuePlayer
+      parameters:
+        - name: playerId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Removed from queue
+        '404':
+          description: Queue ticket not found
+
+  /queue/search:
+    post:
+      summary: Find opponents in SR range
+      operationId: searchOpponents
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QueueSearchRequest'
+      responses:
+        '200':
+          description: Matching players
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QueueSearchResponse'
+
+components:
+  schemas:
+    QueueEnqueueRequest:
+      type: object
+      required:
+        - playerId
+        - sr
+      properties:
+        playerId:
+          type: string
+        sr:
+          type: number
+    QueueTicket:
+      type: object
+      properties:
+        playerId:
+          type: string
+        sr:
+          type: number
+        status:
+          type: string
+        queuedAt:
+          type: string
+          format: date-time
+    QueueSearchRequest:
+      type: object
+      required:
+        - playerId
+      properties:
+        playerId:
+          type: string
+        minPlayers:
+          type: integer
+        maxSrDelta:
+          type: number
+    QueueSearchResponse:
+      type: object
+      properties:
+        matched:
+          type: boolean
+        playerIds:
+          type: array
+          items:
+            type: string

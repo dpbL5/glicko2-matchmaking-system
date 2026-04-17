@@ -1,0 +1,73 @@
+openapi: 3.0.3
+info:
+	title: Player Service API
+	description: |
+		API specification for player profile and status management.
+	version: 1.0.0
+
+servers:
+	- url: http://localhost:5001
+		description: Local development
+
+paths:
+	/health:
+		get:
+			summary: Health check
+			operationId: healthCheck
+			responses:
+				'200':
+					description: Service is healthy
+					content:
+						application/json:
+							schema:
+								type: object
+								properties:
+									status:
+										type: string
+										example: ok
+
+	/player:
+		get:
+			summary: Get player profiles
+			operationId: getPlayers
+			responses:
+				'200':
+					description: Player list
+					content:
+						application/json:
+							schema:
+								type: array
+								items:
+									$ref: '#/components/schemas/Player'
+
+	/player/{id}:
+		get:
+			summary: Get player by id
+			operationId: getPlayerById
+			parameters:
+				- name: id
+					in: path
+					required: true
+					schema:
+						type: string
+			responses:
+				'200':
+					description: Player record
+					content:
+						application/json:
+							schema:
+								$ref: '#/components/schemas/Player'
+				'404':
+					description: Player not found
+
+components:
+	schemas:
+		Player:
+			type: object
+			properties:
+				id:
+					type: string
+				queued:
+					type: boolean
+				sr:
+					type: number
