@@ -50,6 +50,7 @@ paths:
 					required: true
 					schema:
 						type: string
+						format: uuid
 			responses:
 				'200':
 					description: Player record
@@ -57,6 +58,8 @@ paths:
 						application/json:
 							schema:
 								$ref: '#/components/schemas/Player'
+				'400':
+					description: Invalid player id
 				'404':
 					description: Player not found
 
@@ -64,10 +67,22 @@ components:
 	schemas:
 		Player:
 			type: object
+			required:
+				- id
+				- name
 			properties:
 				id:
 					type: string
-				queued:
-					type: boolean
-				sr:
-					type: number
+					format: uuid
+				name:
+					type: string
+		ErrorResponse:
+			type: object
+			required:
+				- title
+				- status
+			properties:
+				title:
+					type: string
+				status:
+					type: integer
