@@ -20,24 +20,14 @@ public sealed class RatingRepository : IRatingRepository
             .FirstOrDefaultAsync(rating => rating.PlayerId == playerId, cancellationToken);
     }
 
-    public async Task<PlayerRating> UpsertAsync(PlayerRating rating, CancellationToken cancellationToken)
+    public async Task<PlayerRating?> UpdateAsync(PlayerRating rating, CancellationToken cancellationToken)
     {
         var existing = await dbContext.Ratings
             .FirstOrDefaultAsync(entity => entity.PlayerId == rating.PlayerId, cancellationToken);
 
         if (existing is null)
         {
-            var created = new PlayerRating
-            {
-                PlayerId = rating.PlayerId,
-                Rating = rating.Rating,
-                Rd = rating.Rd,
-                Volatility = rating.Volatility
-            };
-
-            dbContext.Ratings.Add(created);
-            await dbContext.SaveChangesAsync(cancellationToken);
-            return created;
+            return null;
         }
 
         existing.Rating = rating.Rating;

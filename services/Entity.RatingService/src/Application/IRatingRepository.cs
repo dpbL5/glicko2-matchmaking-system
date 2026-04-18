@@ -6,5 +6,5 @@ public interface IRatingRepository
 {
     Task<PlayerRating?> GetByPlayerIdAsync(Guid playerId, CancellationToken cancellationToken);
 
-    Task<PlayerRating> UpsertAsync(PlayerRating rating, CancellationToken cancellationToken);
+    Task<PlayerRating?> UpdateAsync(PlayerRating rating, CancellationToken cancellationToken);
 }

@@ -5,6 +5,43 @@ namespace Entity.PlayerService.Infrastructure;
 
 public sealed class PlayerDatabaseInitializer
 {
+    private static readonly (Guid Id, string Name)[] SeedPlayers =
+    [
+        (Guid.Parse("00000000-0000-0000-0000-000000000001"), "Player 001"),
+        (Guid.Parse("00000000-0000-0000-0000-000000000002"), "Player 002"),
+        (Guid.Parse("00000000-0000-0000-0000-000000000003"), "Player 003"),
+        (Guid.Parse("00000000-0000-0000-0000-000000000004"), "Player 004"),
+        (Guid.Parse("00000000-0000-0000-0000-000000000005"), "Player 005"),
+        (Guid.Parse("00000000-0000-0000-0000-000000000006"), "Player 006"),
+        (Guid.Parse("00000000-0000-0000-0000-000000000007"), "Player 007"),
+        (Guid.Parse("00000000-0000-0000-0000-000000000008"), "Player 008"),
+        (Guid.Parse("00000000-0000-0000-0000-000000000009"), "Player 009"),
+        (Guid.Parse("00000000-0000-0000-0000-00000000000a"), "Player 010"),
+        (Guid.Parse("00000000-0000-0000-0000-00000000000b"), "Player 011"),
+        (Guid.Parse("00000000-0000-0000-0000-00000000000c"), "Player 012"),
+        (Guid.Parse("00000000-0000-0000-0000-00000000000d"), "Player 013"),
+        (Guid.Parse("00000000-0000-0000-0000-00000000000e"), "Player 014"),
+        (Guid.Parse("00000000-0000-0000-0000-00000000000f"), "Player 015"),
+        (Guid.Parse("00000000-0000-0000-0000-000000000010"), "Player 016"),
+        (Guid.Parse("00000000-0000-0000-0000-000000000011"), "Player 017"),
+        (Guid.Parse("00000000-0000-0000-0000-000000000012"), "Player 018"),
+        (Guid.Parse("00000000-0000-0000-0000-000000000013"), "Player 019"),
+        (Guid.Parse("00000000-0000-0000-0000-000000000014"), "Player 020"),
+        (Guid.Parse("00000000-0000-0000-0000-000000000015"), "Player 021"),
+        (Guid.Parse("00000000-0000-0000-0000-000000000016"), "Player 022"),
+        (Guid.Parse("00000000-0000-0000-0000-000000000017"), "Player 023"),
+        (Guid.Parse("00000000-0000-0000-0000-000000000018"), "Player 024"),
+        (Guid.Parse("00000000-0000-0000-0000-000000000019"), "Player 025"),
+        (Guid.Parse("00000000-0000-0000-0000-00000000001a"), "Player 026"),
+        (Guid.Parse("00000000-0000-0000-0000-00000000001b"), "Player 027"),
+        (Guid.Parse("00000000-0000-0000-0000-00000000001c"), "Player 028"),
+        (Guid.Parse("00000000-0000-0000-0000-00000000001d"), "Player 029"),
+        (Guid.Parse("00000000-0000-0000-0000-00000000001e"), "Player 030"),
+        (Guid.Parse("00000000-0000-0000-0000-00000000001f"), "Player 031"),
+        (Guid.Parse("00000000-0000-0000-0000-000000000020"), "Player 032"),
+        (Guid.Parse("00000000-0000-0000-0000-000000000021"), "Player 033")
+    ];
+
     private readonly PlayerDbContext dbContext;
 
     public PlayerDatabaseInitializer(PlayerDbContext dbContext)
@@ -21,42 +58,11 @@ public sealed class PlayerDatabaseInitializer
             return;
         }
 
-        var seedPlayers = new[]
+        var seedPlayers = SeedPlayers.Select(player => new Player
         {
-            new Player { Id = Guid.NewGuid(), Name = "Player 001" },
-            new Player { Id = Guid.NewGuid(), Name = "Player 002" },
-            new Player { Id = Guid.NewGuid(), Name = "Player 003" },
-            new Player { Id = Guid.NewGuid(), Name = "Player 004" },
-            new Player { Id = Guid.NewGuid(), Name = "Player 005" },
-            new Player { Id = Guid.NewGuid(), Name = "Player 006" },
-            new Player { Id = Guid.NewGuid(), Name = "Player 007" },
-            new Player { Id = Guid.NewGuid(), Name = "Player 008" },
-            new Player { Id = Guid.NewGuid(), Name = "Player 009" },
-            new Player { Id = Guid.NewGuid(), Name = "Player 010" },
-            new Player { Id = Guid.NewGuid(), Name = "Player 011" },
-            new Player { Id = Guid.NewGuid(), Name = "Player 012" },
-            new Player { Id = Guid.NewGuid(), Name = "Player 013" },
-            new Player { Id = Guid.NewGuid(), Name = "Player 014" },
-            new Player { Id = Guid.NewGuid(), Name = "Player 015" },
-            new Player { Id = Guid.NewGuid(), Name = "Player 016" },
-            new Player { Id = Guid.NewGuid(), Name = "Player 017" },
-            new Player { Id = Guid.NewGuid(), Name = "Player 018" },
-            new Player { Id = Guid.NewGuid(), Name = "Player 019" },
-            new Player { Id = Guid.NewGuid(), Name = "Player 020" },
-            new Player { Id = Guid.NewGuid(), Name = "Player 021" },
-            new Player { Id = Guid.NewGuid(), Name = "Player 022" },
-            new Player { Id = Guid.NewGuid(), Name = "Player 023" },
-            new Player { Id = Guid.NewGuid(), Name = "Player 024" },
-            new Player { Id = Guid.NewGuid(), Name = "Player 025" },
-            new Player { Id = Guid.NewGuid(), Name = "Player 026" },
-            new Player { Id = Guid.NewGuid(), Name = "Player 027" },
-            new Player { Id = Guid.NewGuid(), Name = "Player 028" },
-            new Player { Id = Guid.NewGuid(), Name = "Player 029" },
-            new Player { Id = Guid.NewGuid(), Name = "Player 030" },
-            new Player { Id = Guid.NewGuid(), Name = "Player 031" },
-            new Player { Id = Guid.NewGuid(), Name = "Player 032" },
-            new Player { Id = Guid.NewGuid(), Name = "Player 033" }
-        };
+            Id = player.Id,
+            Name = player.Name
+        });
 
         await dbContext.Players.AddRangeAsync(seedPlayers, cancellationToken);
         await dbContext.SaveChangesAsync(cancellationToken);

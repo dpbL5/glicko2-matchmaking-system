@@ -58,13 +58,22 @@ public sealed class RatingController : ControllerBase
             }));
         }
 
-        var updated = await repository.UpsertAsync(new PlayerRating
+        var updated = await repository.UpdateAsync(new PlayerRating
         {
             PlayerId = id,
             Rating = request.Rating,
             Rd = request.Rd,
             Volatility = request.Volatility
         }, cancellationToken);
+
+        if (updated is null)
+        {
+            return NotFound(new ProblemDetails
+            {
+                Title = "Rating not found.",
+                Status = StatusCodes.Status404NotFound
+            });
+        }
 
         return Ok(ToDto(updated));
     }
