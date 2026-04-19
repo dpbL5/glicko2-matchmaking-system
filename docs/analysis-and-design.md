@@ -175,11 +175,11 @@ sequenceDiagram
     participant GameServer as GameService  
 
     Client->>Gateway: GET /queue/{playerId}/stream
-    Gateway->>PlayerService: GET /player/{id}
-    PlayerService-->>Gateway: Return
+    QueueProcessService->>PlayerService: GET /player/{id}
+    PlayerService-->>QueueProcessService: Return
 
-    Gateway->>RatingService: GET /rating/{id}
-    RatingService-->>Gateway: Return
+    QueueProcessService->>RatingService: GET /rating/{id}
+    RatingService-->>QueueProcessService: Return
     Gateway->>QueueProcessService: Open SSE stream
     QueueProcessService-->>Gateway: SSE stream established
     Gateway-->>Client: SSE connection established
@@ -192,7 +192,7 @@ sequenceDiagram
 
     loop While queue ticket is active
         QueueProcessService->>QueueProcessService: Search tickets within SR range
-        QueueProcessService-->>Gateway: SSE event: queue-status-changed
+        QueueProcessService-->>Gateway: SSE event
         Gateway-->>Client: SSE data (Waiting / Removed)
     end
 
@@ -200,11 +200,12 @@ sequenceDiagram
         QueueProcessService->>MatchmakingProcessService: POST /mm
         MatchmakingProcessService->>MatchService: POST /matches
         MatchService-->>MatchmakingProcessService: Return
-        MatchmakingProcessService->>QueueProcessService: DELETE /queue
-        QueueProcessService-->>MatchmakingProcessService: Return
 
+        MatchmakingProcessService->>QueueProcessService: DELETE /queue
         MatchmakingProcessService->>Broker: MatchReady
-        Broker-->>Gateway: MatchReady
+        Broker-->>QueueProcessService: MatchReady
+        QueueProcessService-->>MatchmakingProcessService: Return
+        QueueProcessService-->>Gateway: Return
         Gateway-->>Client: SSE data (Matched + matchId)
         QueueProcessService-->>Gateway: SSE stream closed
         Gateway-->>Client: SSE connection closed
@@ -229,7 +230,6 @@ sequenceDiagram
         MatchmakingProcessService-->>Gateway: SSE stream established
         Gateway-->>Client: Match result
     end
-
 ```
 
 ---
@@ -274,7 +274,7 @@ Full OpenAPI specs:
 |/health|GET|Health check|None|200|
 |/queue|POST|Enqueue player to matchmaking pool|QueueEnqueueRequest|201, 400, 404|
 |/queue/{playerId}/stream|GET|Subscribe queue status via SSE|None|200, 404|
-|/queue/{playerId}|DELETE|Dequeue player from pool|None|204, 404|
+|/queue|DELETE|Dequeue player from pool|QueueDequeueRequest|204, 404|
 
 The queue service also performs the search and lock/release loop that leads to match formation, but those steps are orchestrated internally rather than exposed as separate public REST endpoints.
 
@@ -301,10 +301,10 @@ Internal processing flow for each service, based on the current implementation.
 
 ```mermaid
 flowchart TD
-    A["Receive GET /player or /player/{id}"] --> B{Request type?}
-    B -->|GET /player| C[Read player profiles from store]
+    A["Receive GET /players or /players/{id}"] --> B{Request type?}
+    B -->|GET /players| C[Read player profiles from store]
     C --> D[Return player list]
-    B -->|"GET /player/{id}"| E[Validate identifier]
+    B -->|"GET /players/{id}"| E[Validate identifier]
     E --> F[Read player profile from store]
     F --> G{Player found?}
     G -->|No| H[Return 404]
@@ -315,17 +315,17 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    A[Receive POST /match] --> B[Validate match create request]
+    A[Receive POST /matches] --> B[Validate match create request]
     B --> C{Valid?}
     C -->|No| D[Return 400]
     C -->|Yes| E[Persist pending match]
     E --> F[Return 201 Created]
-    G["Receive GET /match/{id}"] --> H[Validate identifier]
+    G["Receive GET /matches/{id}"] --> H[Validate identifier]
     H --> I[Load match from store]
     I --> J{Match found?}
     J -->|No| K[Return 404]
     J -->|Yes| L[Return match record]
-    M["Receive POST /match/{id}/result"] --> N[Validate match result callback]
+    M["Receive POST /matches/{id}"] --> N[Validate match result callback]
     N --> O{Valid?}
     O -->|No| P[Return 400]
     O -->|Yes| Q[Update result and status]
@@ -343,29 +343,21 @@ flowchart TD
     C --> D[Check current rating via RatingService]
     D --> E[Upsert waiting ticket with SR snapshot]
     E --> F[Return 201 Created]
-    G["Receive GET /queue/{playerId}"] --> H[Load queue ticket]
-    H --> I{Ticket found?}
-    I -->|No| J[Return 404]
-    I -->|Yes| K[Return ticket state]
-    L["Receive DELETE /queue/{playerId}"] --> M[Load waiting ticket]
-    M --> N{Ticket found and waiting?}
-    N -->|No| J
-    N -->|Yes| O[Mark ticket removed]
-    O --> P[Return 204 No Content]
-    Q[Receive POST /queue/search] --> R[Validate search request]
-    R --> S[Load waiting ticket]
-    S --> T{Ticket waiting?}
-    T -->|No| J
-    T -->|Yes| U[Search and match by SR delta]
-    U --> V{Enough players found?}
-    V -->|No| W[Return matched=false]
-    V -->|Yes| X[Mark selected tickets matched]
-    X --> Y[Return matched=true and playerIds]
-    Z[Background worker pass] --> AA[Scan waiting tickets every interval]
-    AA --> AB[Group by SR delta and queue time]
-    AB --> AC{Match group found?}
-    AC -->|No| Z
-    AC -->|Yes| X
+    G["Receive GET /queue/{playerId}/stream"] --> H[Open SSE stream]
+    H --> I[Emit current queue state]
+    J["Receive DELETE /queue"] --> K[Validate dequeue request]
+    K --> L[Mark ticket removed]
+    L --> M[Return 204 No Content]
+    N[Background worker pass] --> O[Scan waiting tickets every interval]
+    O --> P[Group by SR delta and queue time]
+    P --> Q{Match group found?}
+    Q -->|No| N
+    Q -->|Yes| R[Request match initialization via POST /mm]
+    R --> S{Workflow accepted?}
+    S -->|No| N
+    S -->|Yes| T[Receive queue status change]
+    T --> U[Push SSE event: Matched + matchId]
+    U --> V[Close SSE stream]
 ```
 
 **MatchmakingProcessService:**
@@ -376,25 +368,24 @@ flowchart TD
     B --> C[Request match creation from MatchService]
     C --> D{Match created?}
     D -->|No| E[Return 409 or 400]
-    D -->|Yes| F[Return 202 Accepted]
-    F --> G[Track matchmaking workflow completion]
+    D -->|Yes| F[Request dequeue from QueueProcessService]
+    F --> G{Queue updated?}
+    G -->|No| E
+    G -->|Yes| H[Publish MatchReady event]
+    H --> I[Return 202 Accepted]
 ```
 
 **RatingService:**
 
 ```mermaid
 flowchart TD
-    A["Receive GET /rating/{id}"] --> B[Load rating from store]
+    A["Receive GET /ratings/{id}"] --> B[Load rating from store]
     B --> C{Rating found?}
     C -->|No| D[Return 404]
     C -->|Yes| E[Return rating record]
-    F["Receive POST /rating/{id}"] --> G[Validate rating update request]
+    F["Receive POST /ratings/{id}"] --> G[Validate rating update request]
     G --> H[Load current rating]
-    H --> I[Apply update or Glicko-2 recalculation]
+    H --> I[Apply Glicko-2 recalculation from match result]
     I --> J[Persist updated rating]
     J --> K[Return updated rating]
-    L["Receive POST /rating/{id}/recalculate"] --> M[Parse match result and opponent ratings]
-    M --> N[Apply Glicko-2 recalculation]
-    N --> O[Persist updated rating]
-    O --> P[Publish RatingUpdated]
 ```
