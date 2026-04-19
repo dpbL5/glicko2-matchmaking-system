@@ -65,7 +65,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-    post:
+    put:
       summary: Update player rating by id
       tags:
         - Ratings
@@ -115,7 +115,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
   /ratings/{id}/recalculate:
-    post:
+    put:
       summary: Recalculate player rating after match result
       tags:
         - Ratings
@@ -220,6 +220,10 @@ components:
     RatingRecalculateRequest:
       type: object
       properties:
+        matchId:
+          type: string
+          format: uuid
+          nullable: true
         matchResult:
           type: string
           enum:

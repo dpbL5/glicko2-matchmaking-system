@@ -140,9 +140,9 @@ Map entities/processes to REST URI Resources.
 |PlayerService|Get player by id   |/players/{id}|GET|
 |MatchService |Create match record|/matches|POST|
 |MatchService |Get match by id|/matches/{id}|GET|
-|MatchService |Submit match result / update status|/matches/{id}|POST|
+|MatchService |Submit match result / update status|/matches/{id}|PATCH|
 |RatingService|Get player rating  |/ratings/{id}|GET|
-|RatingService|Update player rating|/ratings/{id}|POST|
+|RatingService|Update player rating|/ratings/{id}/recalculate|PUT|
 |QueueProcessService|Enqueue player|/queue|POST|
 |QueueProcessService|Player and start searching opponents|/queue/{playerId}/stream|GET|
 |QueueProcessService|Dequeue player|/queue|DELETE|
@@ -265,7 +265,7 @@ Full OpenAPI specs:
 |/health|GET|Health check|None|200|
 |/matches|POST|Create match record for a locked player group|Match create request|201, 400|
 |/matches/{id}|GET|Get match by id|None|200, 404|
-|/matches/{id}|POST|Submit match result and update status|Match result request|200, 400|
+|/matches/{id}|PATCH|Submit match result and update status|Match result request|200, 400|
 
 **QueueProcessService:**
 
@@ -291,7 +291,7 @@ The queue service also performs the search and lock/release loop that leads to m
 |----------|--------|-------------|--------------|----------------|
 |/health|GET|Health check|None|200|
 |/ratings/{id}|GET|Get player rating|None|200, 404|
-|/ratings/{id}|POST|Update player rating after match result|RatingUpdateRequest|200, 404|
+|/ratings/{id}/recalculate|PUT|Update player rating after match result|RatingUpdateRequest|200, 404|
 
 ### 3.2 Service Logic Design
 
@@ -325,7 +325,7 @@ flowchart TD
     I --> J{Match found?}
     J -->|No| K[Return 404]
     J -->|Yes| L[Return match record]
-    M["Receive POST /matches/{id}"] --> N[Validate match result callback]
+    M["Receive PATCH /matches/{id}"] --> N[Validate match result callback]
     N --> O{Valid?}
     O -->|No| P[Return 400]
     O -->|Yes| Q[Update result and status]
@@ -383,7 +383,7 @@ flowchart TD
     B --> C{Rating found?}
     C -->|No| D[Return 404]
     C -->|Yes| E[Return rating record]
-    F["Receive POST /ratings/{id}"] --> G[Validate rating update request]
+    F["Receive PUT /ratings/{id}"] --> G[Validate rating update request]
     G --> H[Load current rating]
     H --> I[Apply Glicko-2 recalculation from match result]
     I --> J[Persist updated rating]

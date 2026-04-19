@@ -2,7 +2,7 @@ openapi: 3.0.3
 info:
   title: Queue Process Service API
   version: 1.0.0
-  description: API contract for queue ticket lifecycle and status streaming.
+  description: API contract for queue ticket lifecycle and signal-based SSE streaming.
 servers:
   - url: http://queue-service:5003
     description: Internal Docker network
@@ -57,9 +57,29 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
+  /queue/players:
+    get:
+      summary: Get all queued players
+      tags:
+        - Queue
+      responses:
+        '200':
+          description: List of queued players
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/QueueTicket'
+        '503':
+          description: Database unavailable
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
   /queue/{playerId}:
     get:
-      summary: Get queue status by player id
+      summary: Get queue ticket by player id
       tags:
         - Queue
       parameters:
@@ -118,7 +138,7 @@ paths:
                 $ref: '#/components/schemas/ProblemDetails'
   /queue/{playerId}/stream:
     get:
-      summary: Stream queue status updates via SSE
+      summary: Stream queue signals via SSE
       tags:
         - Queue
       parameters:
@@ -137,8 +157,11 @@ paths:
               schema:
                 type: string
                 example: |
-                  event: queue-status
-                  data: {"playerId":"00000000-0000-0000-0000-000000000001","sr":1500,"status":"WAITING","queuedAt":"2026-01-01T00:00:00Z","matchedAt":null}
+                  event: queue-signal
+                  data: {"playerId":"00000000-0000-0000-0000-000000000001","sr":1500,"queuedAt":"2026-01-01T00:00:00Z","signal":"QUEUED"}
+
+                  event: queue-signal
+                  data: {"playerId":"00000000-0000-0000-0000-000000000001","matchId":"11111111-1111-1111-1111-111111111111","playerIds":["00000000-0000-0000-0000-000000000001","00000000-0000-0000-0000-000000000002"],"signal":"MATCH_FOUND"}
         '400':
           description: Invalid player id
           content:
@@ -178,23 +201,12 @@ components:
         sr:
           type: number
           format: decimal
-        status:
-          type: string
-          enum:
-            - WAITING
-            - MATCHED
-            - REMOVED
         queuedAt:
           type: string
           format: date-time
-        matchedAt:
-          type: string
-          format: date-time
-          nullable: true
       required:
         - playerId
         - sr
-        - status
         - queuedAt
     ProblemDetails:
       type: object

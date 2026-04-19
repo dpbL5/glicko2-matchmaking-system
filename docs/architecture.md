@@ -54,7 +54,7 @@ Select patterns based on business/technical justifications from your analysis.
 | API Gateway | X | Frontend uses a single entry point for routing, CORS, and request isolation |
 | Database per Service | X | Player, Match, Queue, and Rating services each own their own data and persistence lifecycle |
 | Shared Database | | |
-| Saga | X | Result handling, and rating updates form a long-running workflow across multiple services |
+| Saga | | |
 | Event-driven / Message Queue | X | Match end and rating update events are exchanged through a broker |
 | CQRS | | |
 | Circuit Breaker | | |
