@@ -1,15 +1,14 @@
-using System.Data;
 using Microsoft.EntityFrameworkCore;
 using QueueProcessService.Application;
 using QueueProcessService.Domain;
 
 namespace QueueProcessService.Infrastructure;
 
-public sealed class QueueRepository : IQueueRepository
+public sealed class BackgroundQueueRepository : IQueueRepository
 {
     private readonly QueueDbContext dbContext;
 
-    public QueueRepository(QueueDbContext dbContext)
+    public BackgroundQueueRepository(QueueDbContext dbContext)
     {
         this.dbContext = dbContext;
     }
@@ -27,9 +26,9 @@ public sealed class QueueRepository : IQueueRepository
         }
 
         existing.Sr = ticket.Sr;
-        existing.Status = ticket.Status;
+        existing.Status = QueueStatus.Waiting; // Reset to waiting on re-enqueue
         existing.QueuedAt = ticket.QueuedAt;
-        existing.MatchedAt = ticket.MatchedAt;
+        existing.MatchedAt = null;
 
         await dbContext.SaveChangesAsync(cancellationToken);
         return existing;
@@ -59,53 +58,53 @@ public sealed class QueueRepository : IQueueRepository
         return true;
     }
 
-    public async Task<IReadOnlyList<QueueTicket>> SearchAndMatchAsync(Guid playerId, int minPlayers, decimal maxSrDelta, CancellationToken cancellationToken)
+    public async Task<IReadOnlyList<IReadOnlyList<Guid>>> FindMatchCandidateGroupsAsync(int minPlayers, decimal maxSrDelta, CancellationToken cancellationToken)
     {
-        await using var transaction = await dbContext.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
-
         var waitingTickets = await dbContext.QueueTickets
+            .AsNoTracking()
             .Where(ticket => ticket.Status == QueueStatus.Waiting)
             .OrderBy(ticket => ticket.QueuedAt)
             .ToListAsync(cancellationToken);
 
-        var source = waitingTickets.FirstOrDefault(ticket => ticket.PlayerId == playerId);
-        if (source is null)
+        if (waitingTickets.Count < minPlayers)
         {
             return [];
         }
 
-        var candidates = waitingTickets
-            .Where(ticket => ticket.PlayerId != playerId)
-            .Select(ticket => new
+        var groups = new List<IReadOnlyList<Guid>>();
+        var processedPlayerIds = new HashSet<Guid>();
+
+        foreach (var source in waitingTickets)
+        {
+            if (processedPlayerIds.Contains(source.PlayerId)) continue;
+
+            var candidates = waitingTickets
+                .Where(t => t.PlayerId != source.PlayerId && !processedPlayerIds.Contains(t.PlayerId))
+                .Select(t => new
+                {
+                    Ticket = t,
+                    Delta = Math.Abs(t.Sr - source.Sr)
+                })
+                .Where(c => c.Delta <= maxSrDelta)
+                .OrderBy(c => c.Delta)
+                .ThenBy(c => c.Ticket.QueuedAt)
+                .Take(minPlayers - 1)
+                .ToList();
+
+            if (candidates.Count == minPlayers - 1)
             {
-                Ticket = ticket,
-                Delta = Math.Abs(ticket.Sr - source.Sr)
-            })
-            .Where(candidate => candidate.Delta <= maxSrDelta)
-            .OrderBy(candidate => candidate.Delta)
-            .ThenBy(candidate => candidate.Ticket.QueuedAt)
-            .Take(Math.Max(0, minPlayers - 1))
-            .Select(candidate => candidate.Ticket)
-            .ToList();
+                var matchGroup = new List<QueueTicket> { source };
+                matchGroup.AddRange(candidates.Select(c => c.Ticket));
 
-        var selected = new List<QueueTicket> { source };
-        selected.AddRange(candidates);
+                groups.Add(matchGroup.Select(ticket => ticket.PlayerId).ToList());
 
-        if (selected.Count < minPlayers)
-        {
-            return selected;
+                foreach (var ticket in matchGroup)
+                {
+                    processedPlayerIds.Add(ticket.PlayerId);
+                }
+            }
         }
 
-        var matchedAt = DateTimeOffset.UtcNow;
-        foreach (var ticket in selected)
-        {
-            ticket.Status = QueueStatus.Matched;
-            ticket.MatchedAt = matchedAt;
-        }
-
-        await dbContext.SaveChangesAsync(cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
-
-        return selected;
+        return groups;
     }
 }

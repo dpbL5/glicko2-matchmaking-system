@@ -20,28 +20,37 @@ The Queue Process Service owns the waiting queue lifecycle, validates players be
 | GET | `/health` | Health check returning `{"status":"ok"}` |
 | POST | `/queue` | Enqueue player to pool |
 | GET | `/queue/{playerId}` | Get queue status by player id |
-| POST | `/queue/search` | Find opponents in SR range |
+| GET | `/queue/{playerId}/stream` | Subscribe to queue status updates via SSE |
 | DELETE | `/queue/{playerId}` | Dequeue player from pool |
 
 ## Environment Variables
 
-| Variable | Description | Default |
+| Variable | Description | Example |
 |---|---|---|
-| `QUEUE_DB_HOST` | Queue database host | `queue-db` |
-| `QUEUE_DB_PORT` | Host port exposed by Docker Compose | `5434` |
-| `QUEUE_DB_INTERNAL_PORT` | MySQL container port used by the service | `3306` |
-| `QUEUE_DB_NAME` | Database name | `queuedb` |
-| `QUEUE_DB_USER` | Database user | `queue` |
-| `QUEUE_DB_PASSWORD` | Database password | `queuepass` |
-| `QUEUE_DB_ROOT_PASSWORD` | Root password for the DB container | `rootpass` |
-| `QUEUE_SERVICE_PORT` | Host port exposed by Docker Compose | `5003` |
+| `DB_HOST` | Queue database host | `queue-db` |
+| `DB_PORT` | Queue database port used by service | `3306` |
+| `DB_NAME` | Queue database name | `queuedb` |
+| `DB_USER` | Queue database user | `queue` |
+| `DB_PASSWORD` | Queue database password | `queuepass` |
 | `PLAYER_SERVICE_BASE_URL` | Internal Player Service base URL | `http://player-service:5001` |
 | `RATING_SERVICE_BASE_URL` | Internal Rating Service base URL | `http://rating-service:5005` |
+| `MATCHMAKING_PROCESS_SERVICE_BASE_URL` | Internal Matchmaking Process Service base URL | `http://matchmaking-process-service:5004` |
+
+Docker Compose maps these from `.env` queue-specific values (`QUEUE_DB_*`) into `DB_*` for this service.
 
 ## Running Locally
 
+1. Ensure `.env` exists (copy from `.env.example` if needed).
+2. Start queue database and service:
+
 ```bash
-docker compose up queue-db queue-service --build
+docker compose up --build queue-db queue-service
+```
+
+3. Verify health:
+
+```bash
+curl http://localhost:5003/health
 ```
 
 The service listens on port `5003` inside the container and is exposed through the API gateway at `/api/queue/*`.
@@ -66,4 +75,4 @@ Task.QueueProcessService/
 
 - The service uses environment variables bound into configuration and never hardcodes connection details.
 - Queue entries are persisted with an authoritative SR snapshot fetched from the Rating Service.
-- Matching is atomic inside the queue database transaction so selected players are removed from the waiting set together.
+- Candidate groups are selected by SR proximity, then delegated to Matchmaking Process Service for orchestration.

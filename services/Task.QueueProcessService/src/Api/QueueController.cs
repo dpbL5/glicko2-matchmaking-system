@@ -1,3 +1,4 @@
+using System.Text.Json;
 using QueueProcessService.Application;
 using QueueProcessService.Domain;
 using Microsoft.AspNetCore.Mvc;
@@ -8,8 +9,7 @@ namespace QueueProcessService.Api;
 [Route("queue")]
 public sealed class QueueController : ControllerBase
 {
-    private const int DefaultMinPlayers = 2;
-    private const decimal DefaultMaxSrDelta = 50m;
+    private const int StreamPollIntervalMs = 1000;
 
     private readonly IQueueRepository repository;
     private readonly IQueueUpstreamClient upstreamClient;
@@ -21,7 +21,7 @@ public sealed class QueueController : ControllerBase
     }
 
     [HttpPost]
-    public async global::System.Threading.Tasks.Task<IActionResult> Enqueue([FromBody] QueueEnqueueRequestDto request, CancellationToken cancellationToken)
+    public async Task<IActionResult> Enqueue([FromBody] QueueEnqueueRequestDto request, CancellationToken cancellationToken)
     {
         var validationErrors = ValidateEnqueueRequest(request);
         if (validationErrors.Count > 0)
@@ -74,7 +74,7 @@ public sealed class QueueController : ControllerBase
     }
 
     [HttpGet("{playerId:guid}")]
-    public async global::System.Threading.Tasks.Task<IActionResult> GetQueueStatus(Guid playerId, CancellationToken cancellationToken)
+    public async Task<IActionResult> GetQueueStatus(Guid playerId, CancellationToken cancellationToken)
     {
         if (playerId == Guid.Empty)
         {
@@ -94,25 +94,65 @@ public sealed class QueueController : ControllerBase
             });
         }
 
-        if (ticket.Status == QueueStatus.Waiting)
-        {
-            await repository.SearchAndMatchAsync(playerId, DefaultMinPlayers, DefaultMaxSrDelta, cancellationToken);
-            ticket = await repository.GetByPlayerIdAsync(playerId, cancellationToken);
-            if (ticket is null)
-            {
-                return NotFound(new ProblemDetails
-                {
-                    Title = "Queue ticket not found.",
-                    Status = StatusCodes.Status404NotFound
-                });
-            }
-        }
-
         return Ok(ToDto(ticket));
     }
 
+    [HttpGet("{playerId:guid}/stream")]
+    public async Task<IActionResult> StreamQueueStatus(Guid playerId, CancellationToken cancellationToken)
+    {
+        if (playerId == Guid.Empty)
+        {
+            return BadRequest(new ValidationProblemDetails(new Dictionary<string, string[]>
+            {
+                ["playerId"] = new[] { "Player id is required." }
+            }));
+        }
+
+        var ticket = await repository.GetByPlayerIdAsync(playerId, cancellationToken);
+        if (ticket is null)
+        {
+            return NotFound(new ProblemDetails
+            {
+                Title = "Queue ticket not found.",
+                Status = StatusCodes.Status404NotFound
+            });
+        }
+
+        Response.StatusCode = StatusCodes.Status200OK;
+        Response.ContentType = "text/event-stream";
+        Response.Headers.CacheControl = "no-cache";
+        Response.Headers.Append("X-Accel-Buffering", "no");
+
+        await WriteSseEventAsync(ToDto(ticket), cancellationToken);
+
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            if (ticket.Status != QueueStatus.Waiting)
+            {
+                break;
+            }
+
+            await Task.Delay(StreamPollIntervalMs, cancellationToken);
+
+            var current = await repository.GetByPlayerIdAsync(playerId, cancellationToken);
+            if (current is null)
+            {
+                break;
+            }
+
+            if (current.Status != ticket.Status || current.MatchedAt != ticket.MatchedAt)
+            {
+                await WriteSseEventAsync(ToDto(current), cancellationToken);
+            }
+
+            ticket = current;
+        }
+
+        return new EmptyResult();
+    }
+
     [HttpDelete("{playerId:guid}")]
-    public async global::System.Threading.Tasks.Task<IActionResult> Dequeue(Guid playerId, CancellationToken cancellationToken)
+    public async Task<IActionResult> Dequeue(Guid playerId, CancellationToken cancellationToken)
     {
         if (playerId == Guid.Empty)
         {
@@ -135,38 +175,6 @@ public sealed class QueueController : ControllerBase
         return NoContent();
     }
 
-    [HttpPost("search")]
-    public async global::System.Threading.Tasks.Task<IActionResult> Search([FromBody] QueueSearchRequestDto request, CancellationToken cancellationToken)
-    {
-        var validationErrors = ValidateSearchRequest(request);
-        if (validationErrors.Count > 0)
-        {
-            return BadRequest(new ValidationProblemDetails(validationErrors));
-        }
-
-        var minPlayers = request.MinPlayers ?? DefaultMinPlayers;
-        var maxSrDelta = request.MaxSrDelta ?? DefaultMaxSrDelta;
-
-        var ticket = await repository.GetByPlayerIdAsync(request.PlayerId, cancellationToken);
-        if (ticket is null || ticket.Status != QueueStatus.Waiting)
-        {
-            return NotFound(new ProblemDetails
-            {
-                Title = "Queue ticket not found.",
-                Status = StatusCodes.Status404NotFound
-            });
-        }
-
-        var matchedTickets = await repository.SearchAndMatchAsync(request.PlayerId, minPlayers, maxSrDelta, cancellationToken);
-        var matched = matchedTickets.Count >= minPlayers;
-
-        return Ok(new QueueSearchResponseDto
-        {
-            Matched = matched,
-            PlayerIds = matched ? matchedTickets.Select(item => item.PlayerId).ToList() : []
-        });
-    }
-
     private static QueueTicketDto ToDto(QueueTicket ticket)
     {
         return new QueueTicketDto
@@ -174,8 +182,16 @@ public sealed class QueueController : ControllerBase
             PlayerId = ticket.PlayerId,
             Sr = ticket.Sr,
             Status = ticket.Status,
-            QueuedAt = ticket.QueuedAt
+            QueuedAt = ticket.QueuedAt,
+            MatchedAt = ticket.MatchedAt
         };
+    }
+
+    private async Task WriteSseEventAsync(QueueTicketDto payload, CancellationToken cancellationToken)
+    {
+        await Response.WriteAsync("event: queue-status\n", cancellationToken);
+        await Response.WriteAsync($"data: {JsonSerializer.Serialize(payload)}\n\n", cancellationToken);
+        await Response.Body.FlushAsync(cancellationToken);
     }
 
     private static Dictionary<string, string[]> ValidateEnqueueRequest(QueueEnqueueRequestDto? request)
@@ -191,39 +207,6 @@ public sealed class QueueController : ControllerBase
         if (request.PlayerId == Guid.Empty)
         {
             errors["playerId"] = new[] { "Player id is required." };
-        }
-
-        if (request.Sr <= 0)
-        {
-            errors["sr"] = new[] { "SR must be greater than zero." };
-        }
-
-        return errors;
-    }
-
-    private static Dictionary<string, string[]> ValidateSearchRequest(QueueSearchRequestDto? request)
-    {
-        var errors = new Dictionary<string, string[]>();
-
-        if (request is null)
-        {
-            errors["request"] = new[] { "Request body is required." };
-            return errors;
-        }
-
-        if (request.PlayerId == Guid.Empty)
-        {
-            errors["playerId"] = new[] { "Player id is required." };
-        }
-
-        if (request.MinPlayers is not null && request.MinPlayers.Value < 2)
-        {
-            errors["minPlayers"] = new[] { "Minimum players must be at least 2." };
-        }
-
-        if (request.MaxSrDelta is not null && request.MaxSrDelta.Value <= 0)
-        {
-            errors["maxSrDelta"] = new[] { "Maximum SR delta must be greater than zero." };
         }
 
         return errors;

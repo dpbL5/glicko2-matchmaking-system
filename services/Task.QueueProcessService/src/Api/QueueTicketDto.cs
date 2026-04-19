@@ -9,4 +9,6 @@ public sealed class QueueTicketDto
     public string Status { get; init; } = string.Empty;
 
     public DateTimeOffset QueuedAt { get; init; }
+
+    public DateTimeOffset? MatchedAt { get; init; }
 }

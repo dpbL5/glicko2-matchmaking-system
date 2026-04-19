@@ -1,7 +1,6 @@
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Options;
 using QueueProcessService.Application;
 using QueueProcessService.Infrastructure;
 
@@ -9,15 +8,10 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
 
-builder.Services
-    .AddOptions<QueueDatabaseOptions>()
-    .BindConfiguration(QueueDatabaseOptions.SectionName)
-    .Validate(options => !string.IsNullOrWhiteSpace(options.Host), "QueueDatabase:Host is required.")
-    .Validate(options => options.Port > 0 && options.Port <= 65535, "QueueDatabase:Port must be between 1 and 65535.")
-    .Validate(options => !string.IsNullOrWhiteSpace(options.Name), "QueueDatabase:Name is required.")
-    .Validate(options => !string.IsNullOrWhiteSpace(options.User), "QueueDatabase:User is required.")
-    .Validate(options => !string.IsNullOrWhiteSpace(options.Password), "QueueDatabase:Password is required.")
-    .ValidateOnStart();
+var queueDatabaseOptions = ResolveQueueDatabaseOptions(builder.Configuration);
+ValidateQueueDatabaseOptions(queueDatabaseOptions);
+
+builder.Services.AddSingleton(queueDatabaseOptions);
 
 builder.Services.AddHttpClient("PlayerService", client =>
 {
@@ -37,18 +31,29 @@ builder.Services.AddHttpClient("RatingService", client =>
     client.BaseAddress = new Uri(baseUrl.TrimEnd('/'));
 });
 
+builder.Services.AddHttpClient("MatchmakingProcessService", client =>
+{
+    var baseUrl = builder.Configuration["MatchmakingProcessService:BaseUrl"]
+        ?? Environment.GetEnvironmentVariable("MATCHMAKING_PROCESS_SERVICE_BASE_URL")
+        ?? "http://matchmaking-process-service:5004";
+
+    client.BaseAddress = new Uri(baseUrl.TrimEnd('/'));
+});
+
 builder.Services.AddDbContext<QueueDbContext>((serviceProvider, options) =>
 {
-    var dbOptions = serviceProvider.GetRequiredService<IOptions<QueueDatabaseOptions>>().Value;
+    var dbOptions = serviceProvider.GetRequiredService<QueueDatabaseOptions>();
     var connectionString = $"Server={dbOptions.Host};Port={dbOptions.Port};Database={dbOptions.Name};User={dbOptions.User};Password={dbOptions.Password};SslMode=None;AllowPublicKeyRetrieval=True;";
-    var serverVersion = new MySqlServerVersion(new Version(8, 0, 0));
 
-    options.UseMySql(connectionString, serverVersion);
+    options.UseMySql(connectionString, ServerVersion.AutoDetect(connectionString));
 });
 
 builder.Services.AddScoped<QueueDatabaseInitializer>();
-builder.Services.AddScoped<IQueueRepository, QueueRepository>();
+builder.Services.AddScoped<BackgroundQueueRepository>();
+builder.Services.AddScoped<IQueueRepository>(serviceProvider => serviceProvider.GetRequiredService<BackgroundQueueRepository>());
 builder.Services.AddScoped<IQueueUpstreamClient, QueueUpstreamClient>();
+
+builder.Services.AddHostedService<MatchmakingWorker>();
 
 var app = builder.Build();
 
@@ -83,3 +88,79 @@ await using (var scope = app.Services.CreateAsyncScope())
 app.MapControllers();
 
 app.Run();
+
+static QueueDatabaseOptions ResolveQueueDatabaseOptions(IConfiguration configuration)
+{
+    var sectionOptions = configuration.GetSection(QueueDatabaseOptions.SectionName).Get<QueueDatabaseOptions>()
+        ?? new QueueDatabaseOptions();
+
+    var host = Environment.GetEnvironmentVariable("DB_HOST")
+        ?? Environment.GetEnvironmentVariable("QUEUE_DB_HOST")
+        ?? sectionOptions.Host;
+
+    var name = Environment.GetEnvironmentVariable("DB_NAME")
+        ?? Environment.GetEnvironmentVariable("QUEUE_DB_NAME")
+        ?? sectionOptions.Name;
+
+    var user = Environment.GetEnvironmentVariable("DB_USER")
+        ?? Environment.GetEnvironmentVariable("QUEUE_DB_USER")
+        ?? sectionOptions.User;
+
+    var password = Environment.GetEnvironmentVariable("DB_PASSWORD")
+        ?? Environment.GetEnvironmentVariable("QUEUE_DB_PASSWORD")
+        ?? sectionOptions.Password;
+
+    var port = sectionOptions.Port;
+    var configuredPort = Environment.GetEnvironmentVariable("DB_PORT")
+        ?? Environment.GetEnvironmentVariable("QUEUE_DB_INTERNAL_PORT")
+        ?? Environment.GetEnvironmentVariable("QUEUE_DB_PORT");
+
+    if (!string.IsNullOrWhiteSpace(configuredPort) && int.TryParse(configuredPort, out var parsedPort))
+    {
+        port = parsedPort;
+    }
+
+    return new QueueDatabaseOptions
+    {
+        Host = host,
+        Port = port,
+        Name = name,
+        User = user,
+        Password = password
+    };
+}
+
+static void ValidateQueueDatabaseOptions(QueueDatabaseOptions options)
+{
+    var errors = new List<string>();
+
+    if (string.IsNullOrWhiteSpace(options.Host))
+    {
+        errors.Add("DB_HOST (or QUEUE_DB_HOST / QueueDatabase:Host) is required.");
+    }
+
+    if (options.Port <= 0 || options.Port > 65535)
+    {
+        errors.Add("DB_PORT must be between 1 and 65535.");
+    }
+
+    if (string.IsNullOrWhiteSpace(options.Name))
+    {
+        errors.Add("DB_NAME (or QUEUE_DB_NAME / QueueDatabase:Name) is required.");
+    }
+
+    if (string.IsNullOrWhiteSpace(options.User))
+    {
+        errors.Add("DB_USER (or QUEUE_DB_USER / QueueDatabase:User) is required.");
+    }
+
+    if (string.IsNullOrWhiteSpace(options.Password))
+    {
+        errors.Add("DB_PASSWORD (or QUEUE_DB_PASSWORD / QueueDatabase:Password) is required.");
+    }
+
+    if (errors.Count > 0)
+    {
+        throw new InvalidOperationException($"Invalid database configuration: {string.Join(" ", errors)}");
+    }
+}

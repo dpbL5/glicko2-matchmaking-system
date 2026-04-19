@@ -11,7 +11,7 @@ public sealed class QueueDatabaseInitializer
         this.dbContext = dbContext;
     }
 
-    public async global::System.Threading.Tasks.Task InitializeAsync(CancellationToken cancellationToken)
+    public async Task InitializeAsync(CancellationToken cancellationToken)
     {
         await dbContext.Database.EnsureCreatedAsync(cancellationToken);
     }

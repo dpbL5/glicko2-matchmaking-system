@@ -6,7 +6,4 @@ public sealed class QueueEnqueueRequestDto
 {
     [Required]
     public Guid PlayerId { get; init; }
-
-    [Range(0.01, double.MaxValue)]
-    public decimal Sr { get; init; }
 }
