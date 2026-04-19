@@ -1,5 +1,4 @@
 using System.Text.Json;
-using System.Collections.Concurrent;
 using QueueProcessService.Application;
 using QueueProcessService.Domain;
 using Microsoft.AspNetCore.Mvc;
@@ -13,7 +12,6 @@ public sealed class QueueController : ControllerBase
 {
     private const int StreamPollIntervalMs = 1000;
     private const decimal MaxSrDelta = 100m;
-    private static readonly ConcurrentDictionary<Guid, Guid> PlayerMatchMap = new();
 
     private readonly IQueueRepository repository;
     private readonly IQueueUpstreamClient upstreamClient;
@@ -35,6 +33,16 @@ public sealed class QueueController : ControllerBase
 
         try
         {
+            var playerExists = await upstreamClient.PlayerExistsAsync(request.PlayerId, cancellationToken);
+            if (!playerExists)
+            {
+                return NotFound(new ProblemDetails
+                {
+                    Title = "Player not found.",
+                    Status = StatusCodes.Status404NotFound
+                });
+            }
+
             var rating = await upstreamClient.GetCurrentRatingAsync(request.PlayerId, cancellationToken);
             if (rating is null)
             {
@@ -49,12 +57,8 @@ public sealed class QueueController : ControllerBase
             {
                 PlayerId = request.PlayerId,
                 Sr = rating.Value,
-                Status = QueueStatus.Waiting,
-                QueuedAt = DateTimeOffset.UtcNow,
-                MatchedAt = null
+                QueuedAt = DateTimeOffset.UtcNow
             }, cancellationToken);
-
-            PlayerMatchMap.TryRemove(request.PlayerId, out _);
 
             return CreatedAtAction(nameof(GetQueueStatus), new { playerId = ticket.PlayerId }, ToDto(ticket));
         }
@@ -143,47 +147,51 @@ public sealed class QueueController : ControllerBase
             var current = await repository.GetByPlayerIdAsync(playerId, cancellationToken);
             if (current is null)
             {
+                if (lastKnownTicket is not null)
+                {
+                    await WriteSignalEventAsync(playerId, "DEQUEUED", null, null, cancellationToken);
+                    break;
+                }
+
                 continue;
             }
 
             if (lastKnownTicket is null
-                || current.Status != lastKnownTicket.Status
-                || current.MatchedAt != lastKnownTicket.MatchedAt
                 || current.QueuedAt != lastKnownTicket.QueuedAt
                 || current.Sr != lastKnownTicket.Sr)
             {
-                await WriteSseEventAsync(ToDto(current), cancellationToken);
+                await WriteQueuedEventAsync(current, cancellationToken);
                 lastKnownTicket = current;
             }
 
-            if (current.Status == QueueStatus.Waiting)
+            var opponent = (await repository.GetQueuedPlayersAsync(cancellationToken))
+                .Where(ticket => ticket.PlayerId != playerId)
+                .Where(ticket => Math.Abs(ticket.Sr - current.Sr) <= MaxSrDelta)
+                .OrderBy(ticket => ticket.QueuedAt)
+                .FirstOrDefault();
+
+            if (opponent is not null)
             {
-                var opponent = (await repository.GetQueuedPlayersAsync(cancellationToken))
-                    .Where(ticket => ticket.PlayerId != playerId)
-                    .Where(ticket => Math.Abs(ticket.Sr - current.Sr) <= MaxSrDelta)
-                    .OrderBy(ticket => ticket.QueuedAt)
-                    .FirstOrDefault();
-
-                if (opponent is not null)
-                {
-                    var initialized = await upstreamClient.InitializeMatchmakingAsync(
-                        new Dictionary<Guid, decimal>
-                        {
-                            [playerId] = current.Sr,
-                            [opponent.PlayerId] = opponent.Sr
-                        },
-                        cancellationToken);
-
-                    if (initialized)
+                var initialized = await upstreamClient.InitializeMatchmakingAsync(
+                    new Dictionary<Guid, decimal>
                     {
-                        continue;
-                    }
-                }
-            }
+                        [playerId] = current.Sr,
+                        [opponent.PlayerId] = opponent.Sr
+                    },
+                    cancellationToken);
 
-            if (current.Status != QueueStatus.Waiting)
-            {
-                break;
+                if (initialized is not null)
+                {
+                    await repository.MarkMatchedAsync(playerId, cancellationToken);
+                    await repository.MarkMatchedAsync(opponent.PlayerId, cancellationToken);
+                    await WriteSignalEventAsync(
+                        playerId,
+                        "MATCH_FOUND",
+                        initialized.MatchId,
+                        initialized.PlayerIds,
+                        cancellationToken);
+                    break;
+                }
             }
         }
 
@@ -217,23 +225,49 @@ public sealed class QueueController : ControllerBase
 
     private static QueueTicketDto ToDto(QueueTicket ticket)
     {
-        PlayerMatchMap.TryGetValue(ticket.PlayerId, out var matchId);
-
         return new QueueTicketDto
         {
             PlayerId = ticket.PlayerId,
-            MatchId = matchId == Guid.Empty ? null : matchId,
             Sr = ticket.Sr,
-            Status = ticket.Status,
-            QueuedAt = ticket.QueuedAt,
-            MatchedAt = ticket.MatchedAt
+            QueuedAt = ticket.QueuedAt
         };
     }
 
-    private async Task WriteSseEventAsync(QueueTicketDto payload, CancellationToken cancellationToken)
+    private async Task WriteSignalEventAsync(
+        Guid playerId,
+        string signal,
+        Guid? matchId,
+        IReadOnlyList<Guid>? playerIds,
+        CancellationToken cancellationToken)
     {
-        await Response.WriteAsync("event: queue-status\n", cancellationToken);
-        await Response.WriteAsync($"data: {JsonSerializer.Serialize(payload)}\n\n", cancellationToken);
+        await Response.WriteAsync("event: queue-signal\n", cancellationToken);
+        if (matchId is null)
+        {
+            await Response.WriteAsync($"data: {{\"playerId\":\"{playerId}\",\"signal\":\"{signal}\"}}\n\n", cancellationToken);
+        }
+        else
+        {
+            await Response.WriteAsync($"data: {JsonSerializer.Serialize(new
+            {
+                playerId,
+                matchId,
+                playerIds,
+                signal
+            })}\n\n", cancellationToken);
+        }
+        await Response.Body.FlushAsync(cancellationToken);
+    }
+
+    private async Task WriteQueuedEventAsync(QueueTicket payload, CancellationToken cancellationToken)
+    {
+        await Response.WriteAsync("event: queue-signal\n", cancellationToken);
+        await Response.WriteAsync($"data: {JsonSerializer.Serialize(new
+        {
+            playerId = payload.PlayerId,
+            sr = payload.Sr,
+            queuedAt = payload.QueuedAt,
+            signal = "QUEUED"
+        })}\n\n", cancellationToken);
         await Response.Body.FlushAsync(cancellationToken);
     }
 

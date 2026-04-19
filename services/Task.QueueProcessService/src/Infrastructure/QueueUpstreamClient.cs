@@ -35,19 +35,6 @@ public sealed class QueueUpstreamClient : IQueueUpstreamClient
     {
         var client = httpClientFactory.CreateClient("RatingService");
 
-        // Prefer the singular route from process flow docs, then fallback to plural route used by RatingService.
-        using var singularResponse = await client.GetAsync($"/rating/{playerId}", cancellationToken);
-        if (singularResponse.IsSuccessStatusCode)
-        {
-            var singularPayload = await singularResponse.Content.ReadFromJsonAsync<RatingResponseDto>(cancellationToken: cancellationToken);
-            return singularPayload?.Rating;
-        }
-
-        if (singularResponse.StatusCode != HttpStatusCode.NotFound)
-        {
-            throw new HttpRequestException($"Rating service returned {(int)singularResponse.StatusCode} ({singularResponse.ReasonPhrase}).", null, singularResponse.StatusCode);
-        }
-
         using var response = await client.GetAsync($"/ratings/{playerId}", cancellationToken);
 
         if (response.StatusCode == HttpStatusCode.NotFound)
@@ -64,22 +51,33 @@ public sealed class QueueUpstreamClient : IQueueUpstreamClient
         return payload?.Rating;
     }
 
-    public async Task<bool> InitializeMatchmakingAsync(IReadOnlyDictionary<Guid, decimal> playerRatings, CancellationToken cancellationToken)
+    public async Task<MatchInitializationResult?> InitializeMatchmakingAsync(IReadOnlyDictionary<Guid, decimal> playerRatings, CancellationToken cancellationToken)
     {
         var client = httpClientFactory.CreateClient("MatchmakingProcessService");
         using var response = await client.PostAsJsonAsync("/mm", new MatchInitRequestDto
         {
-            PlayerIds = playerRatings.Keys.ToList(),
+            PlayerRatings = playerRatings.ToDictionary(entry => entry.Key, entry => entry.Value),
         }, cancellationToken);
 
         if (response.IsSuccessStatusCode)
         {
-            return true;
+            var payload = await response.Content.ReadFromJsonAsync<MatchInitResultDto>(cancellationToken: cancellationToken);
+            if (payload is null || payload.MatchId == Guid.Empty)
+            {
+                return null;
+            }
+
+            return new MatchInitializationResult
+            {
+                MatchId = payload.MatchId,
+                PlayerIds = payload.PlayerIds,
+                DequeuedPlayerIds = payload.DequeuedPlayerIds
+            };
         }
 
         if (response.StatusCode == HttpStatusCode.BadRequest || response.StatusCode == HttpStatusCode.Conflict)
         {
-            return false;
+            return null;
         }
 
         throw new HttpRequestException($"Matchmaking process service returned {(int)response.StatusCode} ({response.ReasonPhrase}).", null, response.StatusCode);
@@ -92,6 +90,16 @@ public sealed class QueueUpstreamClient : IQueueUpstreamClient
 
     private sealed class MatchInitRequestDto
     {
-        public List<Guid> PlayerIds { get; init; } = [];
+        public Dictionary<Guid, decimal> PlayerRatings { get; init; } = [];
     }
+
+    private sealed class MatchInitResultDto
+    {
+        public Guid MatchId { get; init; }
+
+        public IReadOnlyList<Guid> PlayerIds { get; init; } = [];
+
+        public IReadOnlyList<Guid> DequeuedPlayerIds { get; init; } = [];
+    }
+
 }

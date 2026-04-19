@@ -31,18 +31,9 @@ public sealed class QueueDbContext : DbContext
             .HasPrecision(10, 2)
             .IsRequired();
 
-        ticket.Property(entity => entity.Status)
-            .HasColumnName("status")
-            .HasMaxLength(32)
-            .IsRequired();
-
         ticket.Property(entity => entity.QueuedAt)
             .HasColumnName("queued_at")
             .HasColumnType("datetime(6)")
             .IsRequired();
-
-        ticket.Property(entity => entity.MatchedAt)
-            .HasColumnName("matched_at")
-            .HasColumnType("datetime(6)");
     }
 }

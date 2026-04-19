@@ -26,9 +26,7 @@ public sealed class QueueRepository : IQueueRepository
         }
 
         existing.Sr = ticket.Sr;
-        existing.Status = QueueStatus.Waiting; // Reset to waiting on re-enqueue
         existing.QueuedAt = ticket.QueuedAt;
-        existing.MatchedAt = null;
 
         await dbContext.SaveChangesAsync(cancellationToken);
         return existing;
@@ -45,9 +43,24 @@ public sealed class QueueRepository : IQueueRepository
     {
         return await dbContext.QueueTickets
             .AsNoTracking()
-            .Where(ticket => ticket.Status == QueueStatus.Waiting)
             .OrderBy(ticket => ticket.QueuedAt)
             .ToListAsync(cancellationToken);
+    }
+
+    public async Task<bool> MarkMatchedAsync(Guid playerId, CancellationToken cancellationToken)
+    {
+        var existing = await dbContext.QueueTickets
+            .FirstOrDefaultAsync(ticket => ticket.PlayerId == playerId, cancellationToken);
+
+        if (existing is null)
+        {
+            return false;
+        }
+
+        dbContext.QueueTickets.Remove(existing);
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return true;
     }
 
     public async Task<bool> RemoveAsync(Guid playerId, CancellationToken cancellationToken)
@@ -55,13 +68,12 @@ public sealed class QueueRepository : IQueueRepository
         var existing = await dbContext.QueueTickets
             .FirstOrDefaultAsync(ticket => ticket.PlayerId == playerId, cancellationToken);
 
-        if (existing is null || (existing.Status != QueueStatus.Waiting && existing.Status != QueueStatus.Matched))
+        if (existing is null)
         {
             return false;
         }
 
-        existing.Status = QueueStatus.Removed;
-        existing.MatchedAt = null;
+        dbContext.QueueTickets.Remove(existing);
 
         await dbContext.SaveChangesAsync(cancellationToken);
         return true;

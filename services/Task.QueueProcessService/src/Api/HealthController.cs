@@ -1,6 +1,6 @@
-namespace QueueProcessService.Api;
-
 using Microsoft.AspNetCore.Mvc;
+
+namespace QueueProcessService.Api;
 
 [ApiController]
 [Route("health")]

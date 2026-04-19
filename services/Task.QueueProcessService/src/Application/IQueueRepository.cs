@@ -10,5 +10,8 @@ public interface IQueueRepository
 
     Task<IReadOnlyList<QueueTicket>> GetQueuedPlayersAsync(CancellationToken cancellationToken);
 
+    // Removes ticket when player is matched.
+    Task<bool> MarkMatchedAsync(Guid playerId, CancellationToken cancellationToken);
+
     Task<bool> RemoveAsync(Guid playerId, CancellationToken cancellationToken);
 }

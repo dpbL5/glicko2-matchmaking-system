@@ -11,11 +11,5 @@ public sealed class QueueTicket
     public decimal Sr { get; set; }
 
     [Required]
-    [StringLength(32)]
-    public string Status { get; set; } = QueueStatus.Waiting;
-
-    [Required]
     public DateTimeOffset QueuedAt { get; set; }
-
-    public DateTimeOffset? MatchedAt { get; set; }
 }

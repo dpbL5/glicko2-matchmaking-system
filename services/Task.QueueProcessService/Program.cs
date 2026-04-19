@@ -15,27 +15,30 @@ builder.Services.AddSingleton(queueDatabaseOptions);
 
 builder.Services.AddHttpClient("PlayerService", client =>
 {
-    var baseUrl = builder.Configuration["PlayerService:BaseUrl"]
-        ?? Environment.GetEnvironmentVariable("PLAYER_SERVICE_BASE_URL")
-        ?? "http://player-service:5001";
+    var baseUrl = ResolveBaseUrl(
+        builder.Configuration["PlayerService:BaseUrl"],
+        Environment.GetEnvironmentVariable("PLAYER_SERVICE_BASE_URL"),
+        "http://player-service:5001");
 
     client.BaseAddress = new Uri(baseUrl.TrimEnd('/'));
 });
 
 builder.Services.AddHttpClient("RatingService", client =>
 {
-    var baseUrl = builder.Configuration["RatingService:BaseUrl"]
-        ?? Environment.GetEnvironmentVariable("RATING_SERVICE_BASE_URL")
-        ?? "http://rating-service:5005";
+    var baseUrl = ResolveBaseUrl(
+        builder.Configuration["RatingService:BaseUrl"],
+        Environment.GetEnvironmentVariable("RATING_SERVICE_BASE_URL"),
+        "http://rating-service:5005");
 
     client.BaseAddress = new Uri(baseUrl.TrimEnd('/'));
 });
 
 builder.Services.AddHttpClient("MatchmakingProcessService", client =>
 {
-    var baseUrl = builder.Configuration["MatchmakingProcessService:BaseUrl"]
-        ?? Environment.GetEnvironmentVariable("MATCHMAKING_PROCESS_SERVICE_BASE_URL")
-        ?? "http://matchmaking-process-service:5004";
+    var baseUrl = ResolveBaseUrl(
+        builder.Configuration["MatchmakingProcessService:BaseUrl"],
+        Environment.GetEnvironmentVariable("MATCHMAKING_PROCESS_SERVICE_BASE_URL"),
+        "http://matchmaking-process-service:5004");
 
     client.BaseAddress = new Uri(baseUrl.TrimEnd('/'));
 });
@@ -49,7 +52,6 @@ builder.Services.AddDbContext<QueueDbContext>((serviceProvider, options) =>
 });
 
 builder.Services.AddScoped<QueueDatabaseInitializer>();
-builder.Services.AddScoped<QueueRepository>();
 builder.Services.AddScoped<IQueueRepository, QueueRepository>();
 builder.Services.AddScoped<IQueueUpstreamClient, QueueUpstreamClient>();
 
@@ -161,4 +163,17 @@ static void ValidateQueueDatabaseOptions(QueueDatabaseOptions options)
     {
         throw new InvalidOperationException($"Invalid database configuration: {string.Join(" ", errors)}");
     }
+}
+
+static string ResolveBaseUrl(params string?[] candidates)
+{
+    foreach (var candidate in candidates)
+    {
+        if (!string.IsNullOrWhiteSpace(candidate))
+        {
+            return candidate;
+        }
+    }
+
+    return string.Empty;
 }

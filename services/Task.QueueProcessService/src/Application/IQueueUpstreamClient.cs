@@ -6,5 +6,5 @@ public interface IQueueUpstreamClient
 
     Task<decimal?> GetCurrentRatingAsync(Guid playerId, CancellationToken cancellationToken);
 
-    Task<bool> InitializeMatchmakingAsync(IReadOnlyDictionary<Guid, decimal> playerRatings, CancellationToken cancellationToken);
+    Task<MatchInitializationResult?> InitializeMatchmakingAsync(IReadOnlyDictionary<Guid, decimal> playerRatings, CancellationToken cancellationToken);
 }

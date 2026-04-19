@@ -19,8 +19,8 @@ The Queue Process Service owns the waiting queue lifecycle, validates players be
 |---|---|---|
 | GET | `/health` | Health check returning `{"status":"ok"}` |
 | POST | `/queue` | Enqueue player to pool |
-| GET | `/queue/{playerId}` | Get queue status by player id |
-| GET | `/queue/{playerId}/stream` | Subscribe to queue status updates via SSE |
+| GET | `/queue/{playerId}` | Get queue ticket by player id |
+| GET | `/queue/{playerId}/stream` | Subscribe to queue signals via SSE |
 | DELETE | `/queue/{playerId}` | Dequeue player from pool |
 
 ## Environment Variables
@@ -74,4 +74,4 @@ Task.QueueProcessService/
 
 - The service uses environment variables bound into configuration and never hardcodes connection details.
 - Queue entries are persisted with an authoritative SR snapshot fetched from the Rating Service.
-- Matching is atomic inside the queue database transaction so selected players are removed from the waiting set together.
+- Frontend clients should detect queue lifecycle from SSE `queue-signal` events (`QUEUED`, `MATCH_FOUND`, `DEQUEUED`). `MATCH_FOUND` now includes `matchId` and `playerIds` in camelCase.
