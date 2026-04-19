@@ -14,11 +14,11 @@ public sealed class Match
     [Required]
     public string PlayerIdsJson { get; set; } = "[]";
 
+
     [MaxLength(64)]
     public string? QueueId { get; set; }
 
-    [MaxLength(255)]
-    public string? Winner { get; set; }
+    public Guid? Winner { get; set; }
 
     [MaxLength(255)]
     public string? Result { get; set; }

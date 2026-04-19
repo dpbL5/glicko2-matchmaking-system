@@ -42,7 +42,10 @@ public sealed class MatchDbContext : DbContext
 
         match.Property(entity => entity.Winner)
             .HasColumnName("winner")
-            .HasMaxLength(255);
+            .HasMaxLength(36)
+            .HasConversion(
+                winner => winner.HasValue ? winner.Value.ToString() : null,
+                str => string.IsNullOrWhiteSpace(str) ? (Guid?)null : Guid.Parse(str));
 
         match.Property(entity => entity.Result)
             .HasColumnName("result")

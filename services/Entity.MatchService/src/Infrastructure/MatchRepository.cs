@@ -27,7 +27,7 @@ public sealed class MatchRepository : IMatchRepository
             .FirstOrDefaultAsync(match => match.Id == id, cancellationToken);
     }
 
-    public async Task<Match?> UpdateResultAsync(Guid id, string winner, string result, CancellationToken cancellationToken)
+    public async Task<Match?> UpdateResultAsync(Guid id, Guid winner, string result, CancellationToken cancellationToken)
     {
         var existing = await dbContext.Matches
             .FirstOrDefaultAsync(match => match.Id == id, cancellationToken);
@@ -41,6 +41,21 @@ public sealed class MatchRepository : IMatchRepository
         existing.Winner = winner;
         existing.Result = result;
 
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return existing;
+    }
+
+    public async Task<Match?> UpdateStatusAsync(Guid id, string status, CancellationToken cancellationToken)
+    {
+        var existing = await dbContext.Matches
+            .FirstOrDefaultAsync(match => match.Id == id, cancellationToken);
+
+        if (existing is null)
+        {
+            return null;
+        }
+
+        existing.Status = status;
         await dbContext.SaveChangesAsync(cancellationToken);
         return existing;
     }

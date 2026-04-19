@@ -40,7 +40,6 @@ public sealed class MatchController : ControllerBase
                 Id = Guid.NewGuid(),
                 Status = MatchStatus.Pending,
                 PlayerIdsJson = JsonSerializer.Serialize(request.PlayerIds),
-                QueueId = string.IsNullOrWhiteSpace(request.QueueId) ? null : request.QueueId.Trim()
             }, cancellationToken);
 
             return CreatedAtAction(nameof(GetMatchById), new { id = created.Id }, ToDto(created));
@@ -96,9 +95,14 @@ public sealed class MatchController : ControllerBase
         }
     }
 
-    [HttpPost("{id:guid}")]
-    [HttpPost("{id:guid}/result")]
-    [ProducesResponseType(typeof(MatchResultResponseDto), StatusCodes.Status200OK)]
+    /// <summary>
+    /// Receives match result from GameServer.
+    /// Per design §2.8: GameServer → Broker: MatchEnded.
+    /// This endpoint validates the request, looks up the match to build PlayerOutcomes,
+    /// then publishes MatchEndedEvent. The actual DB update is handled by MatchEndedConsumer.
+    /// </summary>
+    [HttpPatch("{id:guid}")]
+    [ProducesResponseType(typeof(MatchResultResponseDto), StatusCodes.Status202Accepted)]
     [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status503ServiceUnavailable)]
@@ -120,8 +124,9 @@ public sealed class MatchController : ControllerBase
 
         try
         {
-            var updated = await repository.UpdateResultAsync(id, request.Winner.Trim(), request.Result.Trim(), cancellationToken);
-            if (updated is null)
+            // Look up the match to validate it exists and to get player IDs
+            var match = await repository.GetByIdAsync(id, cancellationToken);
+            if (match is null)
             {
                 return NotFound(new ProblemDetails
                 {
@@ -130,17 +135,44 @@ public sealed class MatchController : ControllerBase
                 });
             }
 
-            await publishEndpoint.Publish(new MatchUpdatedEvent
+            // Build PlayerOutcomes from match data for Glicko-2 recalculation
+            var playerIds = DeserializePlayerIds(match.PlayerIdsJson);
+            var winnerPlayerId = request.Winner;
+
+            if (!playerIds.Contains(winnerPlayerId))
             {
-                MatchId = updated.Id,
-                Status = updated.Status,
+                return BadRequest(new ValidationProblemDetails(new Dictionary<string, string[]>
+                {
+                    ["winner"] = new[] { "Winner must be a player in the match." }
+                }));
+            }
+
+            var playerOutcomes = playerIds.Select(pid =>
+            {
+                return new MatchPlayerOutcome
+                {
+                    PlayerId = pid,
+                    MatchResult = pid == winnerPlayerId ? "win" : "loss",
+                    OpponentRatings = [] // RatingService will look up from its own DB
+                };
+            }).ToList();
+
+            // Publish MatchEndedEvent — triggers:
+            // - RatingService.MatchEndedConsumer → Glicko-2 recalculation → RatingUpdated
+            // - MatchService.MatchEndedConsumer → Update match result     → MatchUpdated
+            await publishEndpoint.Publish(new MatchEndedEvent
+            {
+                MatchId = match.Id,
+                Winner = winnerPlayerId,
+                Result = request.Result.Trim(),
+                PlayerOutcomes = playerOutcomes,
                 OccurredAt = DateTimeOffset.UtcNow
             }, cancellationToken);
 
-            return Ok(new MatchResultResponseDto
+            return Accepted(new MatchResultResponseDto
             {
-                MatchId = updated.Id,
-                Status = updated.Status
+                MatchId = match.Id,
+                Status = match.Status
             });
         }
         catch (DbUpdateException ex)
@@ -213,9 +245,9 @@ public sealed class MatchController : ControllerBase
             return errors;
         }
 
-        if (string.IsNullOrWhiteSpace(request.Winner))
+        if (request.Winner == Guid.Empty)
         {
-            errors["winner"] = new[] { "Winner is required." };
+            errors["winner"] = new[] { "Winner player id is required." };
         }
 
         if (string.IsNullOrWhiteSpace(request.Result))

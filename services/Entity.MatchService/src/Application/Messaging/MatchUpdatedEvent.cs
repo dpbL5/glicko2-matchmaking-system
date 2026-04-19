@@ -6,5 +6,9 @@ public sealed class MatchUpdatedEvent
 
     public string Status { get; init; } = string.Empty;
 
+    public Guid Winner { get; init; }
+
+    public string Result { get; init; } = string.Empty;
+
     public DateTimeOffset OccurredAt { get; init; } = DateTimeOffset.UtcNow;
 }

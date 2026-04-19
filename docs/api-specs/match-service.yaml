@@ -101,7 +101,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-    post:
+    patch:
       summary: Submit match result
       tags:
         - Matches
@@ -251,7 +251,7 @@ components:
       properties:
         winner:
           type: string
-          maxLength: 255
+          format: uuid
         result:
           type: string
           maxLength: 255

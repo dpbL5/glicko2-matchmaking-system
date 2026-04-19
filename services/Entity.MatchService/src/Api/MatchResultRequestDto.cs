@@ -5,8 +5,7 @@ namespace Entity.MatchService.Api;
 public sealed class MatchResultRequestDto
 {
     [Required]
-    [StringLength(255)]
-    public string Winner { get; init; } = string.Empty;
+    public Guid Winner { get; init; }
 
     [Required]
     [StringLength(255)]
