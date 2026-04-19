@@ -69,19 +69,18 @@ Select patterns based on business/technical justifications from your analysis.
 
 | Component     | Responsibility | Tech Stack      | Port  |
 |---------------|----------------|-----------------|-------|
-| **Frontend**  | Player UI, queue polling, match/result display, Game Server simulation | Vue.js | 3000  |
-| **Gateway**   | Single entry point, routing, CORS, request isolation | Traefik | 8080  |
+| **Frontend**  | Player UI, queue status stream, match/result display, Game Server simulation | Vue.js | 3000  |
+| **Gateway**   | Single entry point, routing, CORS, request isolation, SSE relay | .NET 9 | 8080  |
 | **Player Service** | Player profiles and player lookup | .NET 9 | 5001  |
 | **Match Service** | Match record creation and result persistence | .NET 9 | 5002  |
-| **Queue Process Service** | Queue ticket lifecycle and opponent search | .NET 9 | 5003  |
-| **Matchmaking Process Service** | Match initialization and team setup | .NET 9 | 5004  |
-| **Rating Service** | Persist and expose player rating data | .NET 9 | 5005  |
-| **Glicko2 Rating Service** | Rating calculation using Glicko-2 | .NET 9 | 5006  |
-| **Message Broker** | Publish/subscribe event transport for saga steps | .NET 9 | 5672  |
-| **Player DB**  | Player persistence | Mysql | 5432  |
-| **Match DB**   | Match persistence | Mysql | 5433  |
-| **Queue DB**   | Queue persistence | Mysql | 5434  |
-| **Rating DB**  | Rating persistence | Mysql | 5435  |
+| **Queue Process Service** | Queue ticket lifecycle, SR snapshot, and opponent search | .NET 9 | 5003  |
+| **Matchmaking Process Service** | Match orchestration and saga coordination between queue and match services | .NET 9 | 5004  |
+| **Rating Service** | Persist, expose, and recalculate player rating data after match results | .NET 9 | 5005  |
+| **Message Broker** | Publish/subscribe event transport for saga steps | RabbitMQ 3 | 5672  |
+| **Player DB**  | Player persistence | MySQL | 5432  |
+| **Match DB**   | Match persistence | MySQL | 5433  |
+| **Queue DB**   | Queue persistence | MySQL | 5434  |
+| **Rating DB**  | Rating persistence | MySQL | 5435  |
 
 ---
 
@@ -89,17 +88,16 @@ Select patterns based on business/technical justifications from your analysis.
 
 ### Inter-service Communication Matrix
 
-| From \\ To | Frontend | Gateway | Player Service | Match Service | Queue Process Service | Matchmaking Process Service | Rating Service | Glicko2 Rating Service | Message Broker | Player DB | Match DB | Queue DB | Rating DB |
-|------------|----------|---------|----------------|---------------|----------------------|-----------------------------|---------------|------------------------|---------------|-----------|----------|----------|----------|
-| Frontend | - | REST | - | - | - | - | - | - | - | - | - | - | - |
-| Gateway | - | - | REST | REST | REST | REST | REST | REST | - | - | - | - | - |
-| Player Service | - | - | - | - | - | - | - | - | - | Read | - | - | - |
-| Match Service | - | - | - | - | - | - | - | - | Event publish / consume | - | Read / Write | - | - |
-| Queue Process Service | - | - | REST | - | - | REST | REST | - | - | - | - | Read / Write | - |
-| Matchmaking Process Service | - | - | - | REST | - | - | - | - | - | - | - | - | - |
-| Rating Service | - | - | - | - | - | - | - | - | Event publish / consume | - | - | - | Read / Write |
-| Glicko2 Rating Service | - | - | - | - | - | - | - | - | Event publish / consume | - | - | - | - |
-| Message Broker | - | - | - | Event consume | - | - | Event consume | Event consume | - | - | - | - | - |
+| From \\ To | Frontend | Gateway | Player Service | Match Service | Queue Process Service | Matchmaking Process Service | Rating Service | Message Broker | Player DB | Match DB | Queue DB | Rating DB |
+|------------|----------|---------|----------------|---------------|----------------------|-----------------------------|---------------|---------------|-----------|----------|----------|----------|
+| Frontend | - | REST / SSE | - | - | - | - | - | - | - | - | - | - | - |
+| Gateway | REST / SSE | - | REST | REST | REST | REST | REST | Event consume / SSE relay | - | - | - | - | - |
+| Player Service | - | - | - | - | - | - | - | - | Read / Write | - | - | - | - |
+| Match Service | - | - | - | - | - | - | - | Event publish / consume | - | Read / Write | - | - | - |
+| Queue Process Service | - | - | REST | - | - | REST | REST | - | - | - | Read / Write | - |
+| Matchmaking Process Service | - | - | - | REST | - | - | - | Event publish / consume | - | - | - | - | - |
+| Rating Service | - | - | - | - | REST | - | - | Event publish / consume | - | - | - | Read / Write |
+| Message Broker | - | Event consume | - | Event consume | - | Event consume | Event consume | - | - | - | - | - | - |
 | Player DB | - | - | Write | - | - | - | - | - | - | - | - | - | - |
 | Match DB | - | - | - | Write | - | - | - | - | - | - | - | - | - |
 | Queue DB | - | - | - | - | Write | - | - | - | - | - | - | - | - |
@@ -120,16 +118,21 @@ graph LR
     GW --> QS[Queue Process Service]
     GW --> MPS[Matchmaking Process Service]
     GW --> RS[Rating Service]
-    GW --> G2[Glicko2 Rating Service]
 
     QS --> PS
     QS --> RS
     QS --> MPS
     MPS --> MS
-    MS --> MB[(Message Broker)]
-    MB --> G2
-    G2 --> MB
+    QS --> MB[(Message Broker)]
+    MPS --> MB
+    MS --> MB
+    RS --> MB
+    GW --> MB
+    MB --> PS
+    MB --> GW
     MB --> RS
+    MB --> MPS
+    MB --> MS
 
     PS --> PDB[(Player DB)]
     MS --> MDB[(Match DB)]
@@ -143,5 +146,5 @@ graph LR
 
 - All services containerized with Docker
 - Orchestrated via Docker Compose
-- Includes the API Gateway, six backend services, message broker, and per-service databases
+- Includes the API Gateway, five backend services, message broker, and per-service databases
 - Single command: `docker compose up --build`

@@ -18,7 +18,7 @@ Describe or diagram the high-level Business Process to be automated.
 
 - **Domain**: Matchmaking & Rating System
 - **Business Process**: Once a player queues up for a match, the matchmaking system begins searching for suitable opponents. It uses the player's skill rating as the primary criterion, looking for other players with similar ratings. When a suitable group of players is found, the system creates a match. It then assigns each player to a team, trying to balance the overall skill level of both teams. After the match, recalculate rating base on the match result.
-- **Actors**: Player
+- **Actors**: Player, Game Server
 - **Scope**: From the moment a player enters the queue to to all players' SR updated. Excludes in-game play.
 
 **Process Diagram:**
@@ -27,7 +27,7 @@ Describe or diagram the high-level Business Process to be automated.
 flowchart TD
     X[Start] --> A
 
-    A[Player enters queue] --> B[Add player to matchmaking pool]
+    A[Player enqueue] --> B[Add player to matchmaking pool]
 
     B --> C{Find suitable opponents?}
 
@@ -38,12 +38,9 @@ flowchart TD
 
     E --> F[Assign players to teams]
 
-    F --> H{Teams balanced?}
+    F --> H1[Dequeue player from pool]
 
-    H -- No --> G2[Reassign teams to balance SR]
-    G2 --> H
-
-    H -- Yes --> G[Create match]
+    H1 --> G[Create match]
     
     G --> I["Start match<br/>(out of scope)"]
 
@@ -64,8 +61,8 @@ List existing systems, databases, or legacy logic related to this process.
 
 | System Name | Type | Current Role | Interaction Method |
 |-------------|------|--------------|-------------------|
-| Valve's MMR System |External Rating Service / Matchmaking Backend|Calculates player skill rating (MMR), supports matchmaking decisions, updates ratings after matches|API calls (internal service endpoints), event-driven updates after match results|
-|Riot's MMR System| External Rating & Matchmaking Service | Determines hidden MMR, supports matchmaking, adjusts rating based on performance and match outcome| API calls|
+| Valve's MMR System |External Rating Service / Matchmaking Backend|Calculates player skill rating (MMR), supports matchmaking decisions, updates ratings after matches| RPC |
+|Riot's MMR System| External Rating & Matchmaking Service | Determines hidden MMR, supports matchmaking, adjusts rating based on performance and match outcome| RPC |
 
 > If none exist, state: *"None — the process is currently performed manually."*
 
@@ -110,9 +107,9 @@ Identify business entities and group reusable (agnostic) actions into Entity Ser
 
 | Entity | Service Candidate | Agnostic Actions |
 |--------|-------------------|------------------|
-|Player|PlayerService|Get player profiles, get player by id, get player by status|
+|Player|PlayerService|Get all player profiles, get player by id|
 |Match|MatchService|Create match record, get match by id, update match status and result|
-|Rating|RatingService|Get player rating, update player rating|
+|Rating|RatingService|Get player rating, create player rating, update player rating|
 
 ### 2.4 Task Service Candidate
 
@@ -120,10 +117,7 @@ Group process-specific (non-agnostic) actions into a Task Service Candidate.
 
 | Non-agnostic Action | Task Service Candidate |
 |---------------------|------------------------|
-|Enqueue player, find opponents in SR range, and dequeue matched players|QueueProcessService|
-|Initialize a match from a locked player group|MatchmakingProcessService|
-
-<!-- > **Queueing design note:** `QueueProcessService` owns the waiting-list lifecycle. It stores a queue ticket with `playerId`, current `SR`, join timestamp, and queue status. A matcher job or internal request expands the acceptable SR range over time, selects a valid group atomically, and then removes those players from the queue before handing the candidate set to `MatchmakingProcessService`. -->
+|Initialize a match and start Matchmaking workflow|MatchmakingProcessService|
 
 
 ### 2.5 Identify Resources
@@ -132,9 +126,9 @@ Map entities/processes to REST URI Resources.
 
 | Entity / Process | Resource URI |
 |------------------|--------------|
-|Player|/player|
-|Match|/match|
-|Rating|/rating|
+|Player|/players|
+|Match|/matches|
+|Rating|/ratings|
 |MatchmakingProcess|/mm|
 |QueueProcess|/queue|
 
@@ -142,19 +136,17 @@ Map entities/processes to REST URI Resources.
 
 | Service Candidate | Capability | Resource | HTTP Method |
 |-------------------|------------|----------|-------------|
-|PlayerService|Get player profiles|/player|GET|
-|PlayerService|Get player by id|/player/{id}|GET|
-|MatchService|Create match record|/match|POST|
-|MatchService|Get match by id|/match/{id}|GET|
-|MatchService|Update match status and result|/match/{id}/result|POST|
-|RatingService|Get player rating|/rating/{id}|GET|
-|RatingService|Update player rating|/rating/{id}|POST|
-|QueueProcessService|Enqueue player to pool|/queue|POST|
-|QueueProcessService|Get queue status by player id|/queue/{playerId}|GET|
-|QueueProcessService|Find opponents in SR range|/queue/search|POST|
-|QueueProcessService|Dequeue player from pool|/queue/{playerId}|DELETE|
-|MatchmakingProcessService|Initialize a match|/mm|POST|
-|Glicko2RatingService|Calculate player rating using Glicko2 model|/glicko2|POST|
+|PlayerService|List players       |/players|GET|
+|PlayerService|Get player by id   |/players/{id}|GET|
+|MatchService |Create match record|/matches|POST|
+|MatchService |Get match by id|/matches/{id}|GET|
+|MatchService |Submit match result / update status|/matches/{id}|POST|
+|RatingService|Get player rating  |/ratings/{id}|GET|
+|RatingService|Update player rating|/ratings/{id}|POST|
+|QueueProcessService|Enqueue player|/queue|POST|
+|QueueProcessService|Player and start searching opponents|/queue/{playerId}/stream|GET|
+|QueueProcessService|Dequeue player|/queue|DELETE|
+|MatchmakingProcessService|Initialize a match and start Matchmaking workflow|/mm|POST|
 
 
 
@@ -165,10 +157,6 @@ Based on Non-Functional Requirements (1.3) and Processing Requirements, identify
 | Candidate | Type (Utility / Microservice) | Justification |
 |-----------|-------------------------------|---------------|
 |QueueProcessService|Microservice|Manages a high-churn waiting queue, requires atomic candidate selection, and benefits from independent scaling and low-latency access|
-|Glicko2RatingService|Microservice|Calculate player rating using Glicko2 model|
-
-<!-- 
-> **Saga note:** the same business flow can be implemented as a choreography Saga without changing the order of steps. Each service still handles the same matchmaking and rating sequence, but the handoffs are represented as domain events instead of a single central workflow controller. -->
 
 ### 2.8 Service Composition Candidates
 
@@ -178,58 +166,69 @@ Interaction diagram showing how Service Candidates collaborate to fulfill the bu
 sequenceDiagram
     participant Client
     participant Gateway
+    participant Broker
     participant QueueProcessService
     participant PlayerService
     participant RatingService
     participant MatchmakingProcessService
     participant MatchService
-    participant Glicko2RatingService
-    participant Broker as Message Broker
-    participant GameServer as External Game Runtime
+    participant GameServer as GameService  
 
-    Client->>Gateway: POST /queue
-    Gateway->>QueueProcessService: Forward enqueue request
-    QueueProcessService->>PlayerService: Verify player exists and is eligible
-    PlayerService-->>QueueProcessService: Return
-    QueueProcessService->>RatingService: GET /rating/{playerId}
-    RatingService-->>QueueProcessService: Return
-    QueueProcessService->>QueueProcessService: Store queue ticket with SR snapshot and timestamp
-    QueueProcessService-->>Gateway: Return queue ticket
-    Gateway-->>Client: Queue ticket
+    Client->>Gateway: GET /queue/{playerId}/stream
+    Gateway->>PlayerService: GET /player/{id}
+    PlayerService-->>Gateway: Return
 
-    loop poll until matched
-        Client->>Gateway: GET /queue/{playerId}
-        Gateway->>QueueProcessService: Forward status request
-        QueueProcessService-->>Gateway: Queue status
-        Gateway-->>Client: Queue status
+    Gateway->>RatingService: GET /rating/{id}
+    RatingService-->>Gateway: Return
+    Gateway->>QueueProcessService: Open SSE stream
+    QueueProcessService-->>Gateway: SSE stream established
+    Gateway-->>Client: SSE connection established
+    
+    Gateway->>QueueProcessService: POST /queue
+    QueueProcessService->>QueueProcessService: Store ticket as Waiting
+    QueueProcessService-->>Gateway: 201 Created
+    Gateway-->>Client: Queue ticket 
+
+
+    loop While queue ticket is active
+        QueueProcessService->>QueueProcessService: Search tickets within SR range
+        QueueProcessService-->>Gateway: SSE event: queue-status-changed
+        Gateway-->>Client: SSE data (Waiting / Removed)
     end
 
-    loop until enough players are found
-        QueueProcessService->>QueueProcessService: Search candidates within current SR range
-        alt valid party found
-            QueueProcessService->>QueueProcessService: Atomically dequeue selected players
-            QueueProcessService->>MatchmakingProcessService: POST /mm (initialize match)
-            MatchmakingProcessService->>MatchService: POST /match (create match record)
-            MatchService-->>MatchmakingProcessService: Match id and participants
-            MatchmakingProcessService-->>QueueProcessService: Match created and queue ticket updated to MATCHED
-        else not enough players
-            QueueProcessService->>QueueProcessService: Expand SR range and continue waiting
-        end
+    alt valid party found
+        QueueProcessService->>MatchmakingProcessService: POST /mm
+        MatchmakingProcessService->>MatchService: POST /matches
+        MatchService-->>MatchmakingProcessService: Return
+        MatchmakingProcessService->>QueueProcessService: DELETE /queue
+        QueueProcessService-->>MatchmakingProcessService: Return
+
+        MatchmakingProcessService->>Broker: MatchReady
+        Broker-->>Gateway: MatchReady
+        Gateway-->>Client: SSE data (Matched + matchId)
+        QueueProcessService-->>Gateway: SSE stream closed
+        Gateway-->>Client: SSE connection closed
+    else not enough players
+        QueueProcessService->>QueueProcessService: Keep tickets waiting
     end
 
     Note over GameServer,MatchService: In-game session is out of scope and runs externally
-    GameServer->>MatchService: POST /match/{id}/result
-    MatchService->>Broker: Publish MatchEnded
-    Broker-->>Glicko2RatingService: MatchEnded
-    Glicko2RatingService->>Broker: Publish RatingRecalculated
-    Broker-->>RatingService: RatingRecalculated
-    RatingService->>Broker: Publish RatingUpdated
-    Broker-->>MatchService: RatingUpdated
-    MatchService-->>GameServer: Return updated player ratings and match status
-    MatchService-->>Gateway: Match finished with updated ratings
-    Gateway-->>Client: Match finished with updated ratings
-
-    
+    GameServer->>Broker: MatchEnded
+    Broker-->>RatingService: MatchEnded
+    RatingService->>RatingService: Recalculate rating and stored
+    RatingService-->>Broker: RatingUpdated
+    Broker-->>MatchmakingProcessService: RatingUpdated
+    Broker-->>MatchService: MatchEnded
+    MatchService->>MatchService: Update Match result
+    MatchService-->>Broker: MatchUpdated
+    Broker-->>MatchmakingProcessService: MatchUpdated
+   
+    Client->>Gateway: GET /matches/{matchId}
+    Gateway->>MatchmakingProcessService: Open SSE stream
+    loop wait for result
+        MatchmakingProcessService-->>Gateway: SSE stream established
+        Gateway-->>Client: Match result
+    end
 
 ```
 
@@ -237,136 +236,165 @@ sequenceDiagram
 
 ## Part 3 — Service-Oriented Design
 
-> Part 3 is the **convergence point** — regardless of whether you used Step-by-Step Action or DDD in Part 2, the outputs here are the same: service contracts and service logic.
+> Part 3 is the **convergence point** — the service contracts and service logic below follow the resources and capabilities identified in Part 2.
+<!-- > Internal saga commands used for coordination are part of the implementation detail, not the public REST contract. -->
 
 ### 3.1 Uniform Contract Design
 
-Service Contract specification for each service. Full OpenAPI specs:
-- [`docs/api-specs/player-service.yaml`](api-specs/player-service.yaml)
-- [`docs/api-specs/match-service.yaml`](api-specs/match-service.yaml)
-- [`docs/api-specs/queue-process-service.yaml`](api-specs/queue-process-service.yaml)
-- [`docs/api-specs/matchmaking-process-service.yaml`](api-specs/matchmaking-process-service.yaml)
-- [`docs/api-specs/rating-service.yaml`](api-specs/rating-service.yaml)
-- [`docs/api-specs/glicko2-rating-service.yaml`](api-specs/glicko2-rating-service.yaml)
+Service contract specification for each service. The tables below reflect the public process-facing capabilities identified in Part 2; internal search, lock, confirm, and release mechanics remain implementation details.
 
-> 💡 **Derive from Part 2:** Each service capability from 2.6 maps to one API endpoint. Update the OpenAPI spec files to match.
+Full OpenAPI specs:
+- [docs/api-specs/player-service.yaml](docs/api-specs/player-service.yaml)
+- [docs/api-specs/match-service.yaml](docs/api-specs/match-service.yaml)
+- [docs/api-specs/queue-process-service.yaml](docs/api-specs/queue-process-service.yaml)
+- [docs/api-specs/matchmaking-process-service.yaml](docs/api-specs/matchmaking-process-service.yaml)
+- [docs/api-specs/rating-service.yaml](docs/api-specs/rating-service.yaml)
 
 **PlayerService:**
 
 | Endpoint | Method | Description | Request Body | Response Codes |
 |----------|--------|-------------|--------------|----------------|
 |/health|GET|Health check|None|200|
-|/player|GET|Get player profiles|None|200|
-|/player/{id}|GET|Get player by id|None|200, 404|
+|/players|GET|List player profiles|None|200|
+|/players/{id}|GET|Get player by id|None|200, 404|
 
 **MatchService:**
 
 | Endpoint | Method | Description | Request Body | Response Codes |
 |----------|--------|-------------|--------------|----------------|
 |/health|GET|Health check|None|200|
-|/match|POST|Create match record|Match create request|201, 400|
-|/match/{id}|GET|Get match by id|None|200, 404|
-|/match/{id}/result|POST|Update match status and result|Match result callback|200, 400|
+|/matches|POST|Create match record for a locked player group|Match create request|201, 400|
+|/matches/{id}|GET|Get match by id|None|200, 404|
+|/matches/{id}|POST|Submit match result and update status|Match result request|200, 400|
 
 **QueueProcessService:**
 
 | Endpoint | Method | Description | Request Body | Response Codes |
 |----------|--------|-------------|--------------|----------------|
 |/health|GET|Health check|None|200|
-|/queue|POST|Enqueue player to pool|Queue request|201, 400|
-|/queue/{playerId}|GET|Get queue status by player id|None|200, 404|
-|/queue/search|POST|Find opponents in SR range|Queue search request|200|
+|/queue|POST|Enqueue player to matchmaking pool|QueueEnqueueRequest|201, 400, 404|
+|/queue/{playerId}/stream|GET|Subscribe queue status via SSE|None|200, 404|
 |/queue/{playerId}|DELETE|Dequeue player from pool|None|204, 404|
+
+The queue service also performs the search and lock/release loop that leads to match formation, but those steps are orchestrated internally rather than exposed as separate public REST endpoints.
 
 **MatchmakingProcessService:**
 
 | Endpoint | Method | Description | Request Body | Response Codes |
 |----------|--------|-------------|--------------|----------------|
 |/health|GET|Health check|None|200|
-|/mm|POST|Initialize a match from locked players|Match init request|201, 400|
+|/mm|POST|Initialize matchmaking from a locked player group|MatchInitRequest|202, 400, 409|
 
 **RatingService:**
 
 | Endpoint | Method | Description | Request Body | Response Codes |
 |----------|--------|-------------|--------------|----------------|
 |/health|GET|Health check|None|200|
-|/rating/{id}|GET|Get player rating|None|200, 404|
-|/rating/{id}|POST|Update player rating|Rating update request|200, 404|
-
-**Glicko2RatingService:**
-
-| Endpoint | Method | Description | Request Body | Response Codes |
-|----------|--------|-------------|--------------|----------------|
-|/health|GET|Health check|None|200|
-|/glicko2|POST|Calculate player rating using Glicko2 model|Rating calculation request|200, 400|
+|/ratings/{id}|GET|Get player rating|None|200, 404|
+|/ratings/{id}|POST|Update player rating after match result|RatingUpdateRequest|200, 404|
 
 ### 3.2 Service Logic Design
 
-Internal processing flow for each service.
+Internal processing flow for each service, based on the current implementation.
 
 **PlayerService:**
 
 ```mermaid
 flowchart TD
-    A[Receive request] --> B{Validate id or filter?}
-    B -->|No| C[Return 4xx error]
-    B -->|Yes| D[Read player record]
-    D --> E[Return response]
+    A["Receive GET /player or /player/{id}"] --> B{Request type?}
+    B -->|GET /player| C[Read player profiles from store]
+    C --> D[Return player list]
+    B -->|"GET /player/{id}"| E[Validate identifier]
+    E --> F[Read player profile from store]
+    F --> G{Player found?}
+    G -->|No| H[Return 404]
+    G -->|Yes| I[Return player profile]
 ```
 
 **MatchService:**
 
 ```mermaid
 flowchart TD
-    A[Receive request] --> B{Validate match request?}
-    B -->|No| C[Return 4xx error]
-    B -->|Yes| D[Create or update match record]
-    D --> E[Return response]
+    A[Receive POST /match] --> B[Validate match create request]
+    B --> C{Valid?}
+    C -->|No| D[Return 400]
+    C -->|Yes| E[Persist pending match]
+    E --> F[Return 201 Created]
+    G["Receive GET /match/{id}"] --> H[Validate identifier]
+    H --> I[Load match from store]
+    I --> J{Match found?}
+    J -->|No| K[Return 404]
+    J -->|Yes| L[Return match record]
+    M["Receive POST /match/{id}/result"] --> N[Validate match result callback]
+    N --> O{Valid?}
+    O -->|No| P[Return 400]
+    O -->|Yes| Q[Update result and status]
+    Q --> R{Match found?}
+    R -->|No| K
+    R -->|Yes| S[Return updated match result]
 ```
 
 **QueueProcessService:**
 
 ```mermaid
 flowchart TD
-    A[Receive request] --> B{Validate request?}
-    B -->|No| C[Return 4xx error]
-    B -->|Yes| D[Read player, queue, and match data]
-    D --> E{Match found?}
-    E -->|No| F[Expand SR range or keep waiting]
-    E -->|Yes| G[Create or update match]
-    G --> H[Publish match events]
-    H --> I[Return response]
+    A[Receive POST /queue] --> B[Validate enqueue request]
+    B --> C[Check player exists via PlayerService]
+    C --> D[Check current rating via RatingService]
+    D --> E[Upsert waiting ticket with SR snapshot]
+    E --> F[Return 201 Created]
+    G["Receive GET /queue/{playerId}"] --> H[Load queue ticket]
+    H --> I{Ticket found?}
+    I -->|No| J[Return 404]
+    I -->|Yes| K[Return ticket state]
+    L["Receive DELETE /queue/{playerId}"] --> M[Load waiting ticket]
+    M --> N{Ticket found and waiting?}
+    N -->|No| J
+    N -->|Yes| O[Mark ticket removed]
+    O --> P[Return 204 No Content]
+    Q[Receive POST /queue/search] --> R[Validate search request]
+    R --> S[Load waiting ticket]
+    S --> T{Ticket waiting?}
+    T -->|No| J
+    T -->|Yes| U[Search and match by SR delta]
+    U --> V{Enough players found?}
+    V -->|No| W[Return matched=false]
+    V -->|Yes| X[Mark selected tickets matched]
+    X --> Y[Return matched=true and playerIds]
+    Z[Background worker pass] --> AA[Scan waiting tickets every interval]
+    AA --> AB[Group by SR delta and queue time]
+    AB --> AC{Match group found?}
+    AC -->|No| Z
+    AC -->|Yes| X
 ```
 
 **MatchmakingProcessService:**
 
 ```mermaid
 flowchart TD
-    A[Receive request] --> B{Validate locked player group?}
-    B -->|No| C[Return 4xx error]
-    B -->|Yes| D[Build teams and initialize match]
-    D --> E[Return match initialization result]
+    A[Receive POST /mm] --> B[Validate locked player group]
+    B --> C[Request match creation from MatchService]
+    C --> D{Match created?}
+    D -->|No| E[Return 409 or 400]
+    D -->|Yes| F[Return 202 Accepted]
+    F --> G[Track matchmaking workflow completion]
 ```
 
 **RatingService:**
 
 ```mermaid
 flowchart TD
-    A[Receive request] --> B{Validate request?}
-    B -->|No| C[Return 4xx error]
-    B -->|Yes| D[Load current rating]
-    D --> E[Run Glicko2 calculation]
-    E --> F[Persist updated rating]
-    F --> G[Return updated rating]
-```
-
-**Glicko2RatingService:**
-
-```mermaid
-flowchart TD
-    A[Receive request] --> B{Validate request?}
-    B -->|No| C[Return 4xx error]
-    B -->|Yes| D[Load player match history and opponent ratings]
-    D --> E[Run Glicko2 calculation]
-    E --> F[Return recalculated rating values]
+    A["Receive GET /rating/{id}"] --> B[Load rating from store]
+    B --> C{Rating found?}
+    C -->|No| D[Return 404]
+    C -->|Yes| E[Return rating record]
+    F["Receive POST /rating/{id}"] --> G[Validate rating update request]
+    G --> H[Load current rating]
+    H --> I[Apply update or Glicko-2 recalculation]
+    I --> J[Persist updated rating]
+    J --> K[Return updated rating]
+    L["Receive POST /rating/{id}/recalculate"] --> M[Parse match result and opponent ratings]
+    M --> N[Apply Glicko-2 recalculation]
+    N --> O[Persist updated rating]
+    O --> P[Publish RatingUpdated]
 ```
