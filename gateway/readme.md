@@ -1,44 +1,40 @@
 # API Gateway
 
-## Overview
+Traefik is the active API gateway for this project.
 
-The API Gateway serves as the single entry point for all client requests. It routes incoming requests to the appropriate backend microservice.
+## What it does
 
-## Responsibilities
-
-- **Request routing**: Forward requests to the correct service
-- **Load balancing**: Distribute traffic (if applicable)
-- **Authentication**: Validate tokens/credentials (optional)
-- **Rate limiting**: Protect services from overload (optional)
-- **CORS handling**: Allow frontend cross-origin requests
-- **Request/Response transformation**: Modify headers, paths as needed
-
-## Tech Stack
-
-| Component  | Choice             |
-|------------|--------------------|
-| Approach   | *(e.g., Nginx, Express, FastAPI, Kong, Traefik)* |
+- Routes public `/api/*` requests to the correct backend service.
+- Keeps the frontend talking to one entry point instead of many service ports.
+- Preserves long-lived HTTP connections so SSE endpoints work through the proxy.
+- Exposes `/health` for a simple gateway-level health check.
 
 ## Routing Table
 
-| External Path        | Target Service | Internal URL                   |
-|----------------------|----------------|--------------------------------|
-| `/api/service-a/*`   | Service A      | `http://service-a:5000/*`      |
-| `/api/service-b/*`   | Service B      | `http://service-b:5000/*`      |
+| External Route | Service | Internal Path |
+|---|---|---|
+| `/api/players/*` | Player Service | `/players` |
+| `/api/queue/*` | Queue Process Service | `/queue` |
+| `/api/matches/*` and `/api/match/*` | Match Service | `/matches` or `/match` |
+| `/api/mm/*` | Matchmaking Process Service | `/mm` |
+| `/api/ratings/*` and `/api/rating/*` | Rating Service | `/ratings` or `/rating` |
+
+## SSE
+
+Queue status streaming works through Traefik at `GET /api/queue/{playerId}/stream`.
+The upstream queue service returns `text/event-stream`, and Traefik forwards the stream without buffering.
+
+## Health Check
+
+`GET /health` returns `{"status":"ok"}`.
 
 ## Running
 
 ```bash
-# From project root
-docker compose up gateway --build
+docker compose up -d gateway
 ```
-
-## Configuration
-
-The gateway uses Docker Compose networking. Services are accessible by their
-service names defined in `docker-compose.yml` (e.g., `service-a`, `service-b`).
 
 ## Notes
 
-- Use service names (not `localhost`) for upstream URLs inside Docker
-- The gateway exposes port 8080 to the host
+- Traefik config lives in `gateway/traefik/`.
+- The old .NET gateway implementation has been removed.

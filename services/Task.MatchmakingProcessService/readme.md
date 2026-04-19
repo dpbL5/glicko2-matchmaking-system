@@ -10,6 +10,7 @@ The Matchmaking Process Service orchestrates match initialization after a valid 
 |---|---|
 | Language | C# |
 | Framework | .NET 9 / ASP.NET Core Controllers |
+| Messaging | MassTransit + RabbitMQ |
 
 ## API Endpoints
 
@@ -24,14 +25,18 @@ The Matchmaking Process Service orchestrates match initialization after a valid 
 |---|---|---|
 | `MATCH_SERVICE_BASE_URL` | Internal Match Service base URL | `http://match-service:5002` |
 | `QUEUE_SERVICE_BASE_URL` | Internal Queue Service base URL | `http://queue-service:5003` |
+| `RABBITMQ_HOST` | RabbitMQ host | `rabbitmq` |
+| `RABBITMQ_PORT` | RabbitMQ AMQP port | `5672` |
+| `RABBITMQ_USER` | RabbitMQ username | `guest` |
+| `RABBITMQ_PASSWORD` | RabbitMQ password | `guest` |
 
 ## Running Locally
 
 1. Ensure `.env` exists (copy from `.env.example` if needed).
-2. Start dependent services and matchmaking process service:
+2. Start dependent services, broker, and matchmaking process service:
 
 ```bash
-docker compose up --build match-service queue-service matchmaking-process-service
+docker compose up --build rabbitmq match-service queue-service matchmaking-process-service
 ```
 
 3. Verify health:
@@ -63,3 +68,5 @@ Task.MatchmakingProcessService/
 - Request validation rejects empty IDs, duplicate player IDs, and insufficient player count.
 - Upstream failures are returned as structured Problem Details responses.
 - The endpoint follows saga-style orchestration: create match first, then dequeue participants.
+- On successful orchestration, the service publishes `MatchReady` event to RabbitMQ.
+- The service consumes `RatingUpdated` and `MatchUpdated` events through MassTransit consumers.

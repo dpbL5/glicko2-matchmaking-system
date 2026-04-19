@@ -1,6 +1,8 @@
 using System.Net;
 using System.Net.Http.Json;
+using MassTransit;
 using MatchmakingProcessService.Application;
+using MatchmakingProcessService.Application.Messaging;
 using MatchmakingProcessService.Domain;
 
 namespace MatchmakingProcessService.Infrastructure;
@@ -8,10 +10,12 @@ namespace MatchmakingProcessService.Infrastructure;
 public sealed class MatchmakingOrchestrator : IMatchmakingOrchestrator
 {
     private readonly IHttpClientFactory httpClientFactory;
+    private readonly IPublishEndpoint publishEndpoint;
 
-    public MatchmakingOrchestrator(IHttpClientFactory httpClientFactory)
+    public MatchmakingOrchestrator(IHttpClientFactory httpClientFactory, IPublishEndpoint publishEndpoint)
     {
         this.httpClientFactory = httpClientFactory;
+        this.publishEndpoint = publishEndpoint;
     }
 
     public async Task<MatchInitializationResult> InitializeAsync(MatchInitializationRequest request, CancellationToken cancellationToken)
@@ -39,6 +43,13 @@ public sealed class MatchmakingOrchestrator : IMatchmakingOrchestrator
             throw new MatchmakingConflictException(
                 $"Match {match.Id} created but some queue tickets could not be dequeued: {string.Join(", ", failedToDequeuePlayerIds)}");
         }
+
+        await publishEndpoint.Publish(new MatchReadyEvent
+        {
+            MatchId = match.Id,
+            PlayerIds = request.PlayerIds,
+            OccurredAt = DateTimeOffset.UtcNow
+        }, cancellationToken);
 
         return new MatchInitializationResult
         {

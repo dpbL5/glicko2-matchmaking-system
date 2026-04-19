@@ -1,0 +1,161 @@
+http:
+  routers:
+    gateway-health-router:
+      entryPoints:
+        - web
+      rule: Path(`/health`)
+      service: gateway-health-service
+      middlewares:
+        - health-no-cache
+
+    player-router:
+      entryPoints:
+        - web
+      rule: PathPrefix(`/api/player`) || PathPrefix(`/api/players`)
+      service: player-service
+      middlewares:
+        - player-path
+
+    queue-router:
+      entryPoints:
+        - web
+      rule: PathPrefix(`/api/queue`)
+      service: queue-service
+      middlewares:
+        - queue-path
+        - queue-sse-headers
+
+    match-router:
+      entryPoints:
+        - web
+      rule: PathPrefix(`/api/match`) || PathPrefix(`/api/matches`)
+      service: match-service
+      middlewares:
+        - match-path
+
+    rating-router:
+      entryPoints:
+        - web
+      rule: PathPrefix(`/api/rating`) || PathPrefix(`/api/ratings`)
+      service: rating-service
+      middlewares:
+        - rating-path
+
+    matchmaking-process-router:
+      entryPoints:
+        - web
+      rule: PathPrefix(`/api/mm`)
+      service: matchmaking-process-service
+      middlewares:
+        - mm-path
+
+  middlewares:
+    health-no-cache:
+      headers:
+        customResponseHeaders:
+          Cache-Control: no-cache
+
+    player-path:
+      chain:
+        middlewares:
+          - strip-player-prefix
+          - add-player-prefix
+    strip-player-prefix:
+      stripPrefix:
+        prefixes:
+          - /api/players
+          - /api/player
+    add-player-prefix:
+      addPrefix:
+        prefix: /players
+
+    queue-path:
+      chain:
+        middlewares:
+          - strip-queue-prefix
+          - add-queue-prefix
+    queue-sse-headers:
+      headers:
+        customResponseHeaders:
+          Cache-Control: no-cache
+          X-Accel-Buffering: no
+          Connection: keep-alive
+    strip-queue-prefix:
+      stripPrefix:
+        prefixes:
+          - /api/queue
+    add-queue-prefix:
+      addPrefix:
+        prefix: /queue
+
+    match-path:
+      chain:
+        middlewares:
+          - strip-match-prefix
+          - add-match-prefix
+    strip-match-prefix:
+      stripPrefix:
+        prefixes:
+          - /api/matches
+          - /api/match
+    add-match-prefix:
+      addPrefix:
+        prefix: /matches
+
+    rating-path:
+      chain:
+        middlewares:
+          - strip-rating-prefix
+          - add-rating-prefix
+    strip-rating-prefix:
+      stripPrefix:
+        prefixes:
+          - /api/ratings
+          - /api/rating
+    add-rating-prefix:
+      addPrefix:
+        prefix: /ratings
+
+    mm-path:
+      chain:
+        middlewares:
+          - strip-mm-prefix
+          - add-mm-prefix
+    strip-mm-prefix:
+      stripPrefix:
+        prefixes:
+          - /api/mm
+    add-mm-prefix:
+      addPrefix:
+        prefix: /mm
+
+  services:
+    gateway-health-service:
+      loadBalancer:
+        servers:
+          - url: http://queue-service:5003
+
+    player-service:
+      loadBalancer:
+        servers:
+          - url: http://player-service:5001
+
+    queue-service:
+      loadBalancer:
+        servers:
+          - url: http://queue-service:5003
+
+    match-service:
+      loadBalancer:
+        servers:
+          - url: http://match-service:5002
+
+    rating-service:
+      loadBalancer:
+        servers:
+          - url: http://rating-service:5005
+
+    matchmaking-process-service:
+      loadBalancer:
+        servers:
+          - url: http://matchmaking-process-service:5004
