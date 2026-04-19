@@ -1,5 +1,7 @@
 using Entity.RatingService.Application;
 using Entity.RatingService.Domain;
+using MassTransit;
+using MatchmakingProcessService.Application.Messaging;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -10,10 +12,12 @@ namespace Entity.RatingService.Api;
 public sealed class RatingController : ControllerBase
 {
     private readonly IRatingRepository repository;
+    private readonly IPublishEndpoint publishEndpoint;
 
-    public RatingController(IRatingRepository repository)
+    public RatingController(IRatingRepository repository, IPublishEndpoint publishEndpoint)
     {
         this.repository = repository;
+        this.publishEndpoint = publishEndpoint;
     }
 
     [HttpGet("{id:guid}")]
@@ -186,6 +190,12 @@ public sealed class RatingController : ControllerBase
                     Status = StatusCodes.Status404NotFound
                 });
             }
+
+            await publishEndpoint.Publish(new RatingUpdatedEvent
+            {
+                MatchId = request.MatchId ?? Guid.Empty,
+                OccurredAt = DateTimeOffset.UtcNow
+            }, cancellationToken);
 
             return Ok(ToDto(updated));
         }

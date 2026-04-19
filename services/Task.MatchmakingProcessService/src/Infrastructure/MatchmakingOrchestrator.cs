@@ -22,21 +22,8 @@ public sealed class MatchmakingOrchestrator : IMatchmakingOrchestrator
     {
         var match = await CreateMatchAsync(request, cancellationToken);
 
-        var dequeuedPlayerIds = new List<Guid>();
-        var failedToDequeuePlayerIds = new List<Guid>();
-
-        foreach (var playerId in request.PlayerIds)
-        {
-            var removed = await TryDequeuePlayerAsync(playerId, cancellationToken);
-            if (removed)
-            {
-                dequeuedPlayerIds.Add(playerId);
-            }
-            else
-            {
-                failedToDequeuePlayerIds.Add(playerId);
-            }
-        }
+        var failedToDequeuePlayerIds = await TryConfirmMatchedPlayersAsync(match.Id, request.PlayerIds, cancellationToken);
+        var dequeuedPlayerIds = request.PlayerIds.Except(failedToDequeuePlayerIds).ToList();
 
         if (failedToDequeuePlayerIds.Count > 0)
         {
@@ -93,25 +80,65 @@ public sealed class MatchmakingOrchestrator : IMatchmakingOrchestrator
         return payload;
     }
 
-    private async Task<bool> TryDequeuePlayerAsync(Guid playerId, CancellationToken cancellationToken)
+    private async Task<IReadOnlyList<Guid>> TryConfirmMatchedPlayersAsync(Guid matchId, IReadOnlyList<Guid> playerIds, CancellationToken cancellationToken)
     {
         var client = httpClientFactory.CreateClient("QueueService");
-        using var response = await client.DeleteAsync($"/queue/{playerId}", cancellationToken);
+        using var response = await client.PostAsJsonAsync("/queue/matched", new ConfirmQueueMatchedRequestDto
+        {
+            MatchId = matchId,
+            PlayerIds = playerIds.ToList()
+        }, cancellationToken);
 
         if (response.IsSuccessStatusCode)
         {
-            return true;
+            return await DequeueMatchedPlayersAsync(playerIds, cancellationToken);
         }
 
-        if (response.StatusCode == HttpStatusCode.NotFound || response.StatusCode == HttpStatusCode.Conflict)
+        if (response.StatusCode == HttpStatusCode.Conflict)
         {
-            return false;
+            return playerIds;
         }
 
         throw new HttpRequestException(
-            $"Queue service returned {(int)response.StatusCode} ({response.ReasonPhrase}) while dequeuing player {playerId}.",
+            $"Queue service returned {(int)response.StatusCode} ({response.ReasonPhrase}) while confirming matched players.",
             null,
             response.StatusCode);
+    }
+
+    private sealed class ConfirmQueueMatchedRequestDto
+    {
+        public Guid MatchId { get; init; }
+
+        public List<Guid> PlayerIds { get; init; } = [];
+    }
+
+    private async Task<IReadOnlyList<Guid>> DequeueMatchedPlayersAsync(IReadOnlyList<Guid> playerIds, CancellationToken cancellationToken)
+    {
+        var failedPlayerIds = new List<Guid>();
+
+        foreach (var playerId in playerIds)
+        {
+            var client = httpClientFactory.CreateClient("QueueService");
+            using var response = await client.DeleteAsync($"/queue/{playerId}", cancellationToken);
+
+            if (response.IsSuccessStatusCode)
+            {
+                continue;
+            }
+
+            if (response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Conflict)
+            {
+                failedPlayerIds.Add(playerId);
+                continue;
+            }
+
+            throw new HttpRequestException(
+                $"Queue service returned {(int)response.StatusCode} ({response.ReasonPhrase}) while dequeuing player {playerId}.",
+                null,
+                response.StatusCode);
+        }
+
+        return failedPlayerIds;
     }
 
     private sealed class MatchCreateRequestDto

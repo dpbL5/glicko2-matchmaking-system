@@ -7,4 +7,5 @@ public static class QueueStatus
     public const string Matched = "MATCHED";
 
     public const string Removed = "REMOVED";
+
 }

@@ -67,6 +67,7 @@ Task.MatchmakingProcessService/
 
 - Request validation rejects empty IDs, duplicate player IDs, and insufficient player count.
 - Upstream failures are returned as structured Problem Details responses.
+- `appsettings.json` provides Docker-friendly defaults for Match and Queue upstream URLs.
 - The endpoint follows saga-style orchestration: create match first, then dequeue participants.
 - On successful orchestration, the service publishes `MatchReady` event to RabbitMQ.
 - The service consumes `RatingUpdated` and `MatchUpdated` events through MassTransit consumers.

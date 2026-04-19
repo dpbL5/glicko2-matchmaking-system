@@ -1,7 +1,9 @@
 using System.Text.Json;
+using System.Collections.Concurrent;
 using QueueProcessService.Application;
 using QueueProcessService.Domain;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace QueueProcessService.Api;
 
@@ -10,6 +12,8 @@ namespace QueueProcessService.Api;
 public sealed class QueueController : ControllerBase
 {
     private const int StreamPollIntervalMs = 1000;
+    private const decimal MaxSrDelta = 100m;
+    private static readonly ConcurrentDictionary<Guid, Guid> PlayerMatchMap = new();
 
     private readonly IQueueRepository repository;
     private readonly IQueueUpstreamClient upstreamClient;
@@ -31,16 +35,6 @@ public sealed class QueueController : ControllerBase
 
         try
         {
-            var playerExists = await upstreamClient.PlayerExistsAsync(request.PlayerId, cancellationToken);
-            if (!playerExists)
-            {
-                return NotFound(new ProblemDetails
-                {
-                    Title = "Player not found.",
-                    Status = StatusCodes.Status404NotFound
-                });
-            }
-
             var rating = await upstreamClient.GetCurrentRatingAsync(request.PlayerId, cancellationToken);
             if (rating is null)
             {
@@ -59,6 +53,8 @@ public sealed class QueueController : ControllerBase
                 QueuedAt = DateTimeOffset.UtcNow,
                 MatchedAt = null
             }, cancellationToken);
+
+            PlayerMatchMap.TryRemove(request.PlayerId, out _);
 
             return CreatedAtAction(nameof(GetQueueStatus), new { playerId = ticket.PlayerId }, ToDto(ticket));
         }
@@ -97,6 +93,27 @@ public sealed class QueueController : ControllerBase
         return Ok(ToDto(ticket));
     }
 
+    [HttpGet("players")]
+    public async Task<IActionResult> GetQueuedPlayers(CancellationToken cancellationToken)
+    {
+        try
+        {
+            var tickets = await repository.GetQueuedPlayersAsync(cancellationToken);
+            var response = tickets.Select(ToDto).ToList();
+
+            return Ok(response);
+        }
+        catch (DbUpdateException exception)
+        {
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, new ProblemDetails
+            {
+                Title = "Database is unavailable.",
+                Status = StatusCodes.Status503ServiceUnavailable,
+                Detail = exception.Message
+            });
+        }
+    }
+
     [HttpGet("{playerId:guid}/stream")]
     public async Task<IActionResult> StreamQueueStatus(Guid playerId, CancellationToken cancellationToken)
     {
@@ -108,44 +125,66 @@ public sealed class QueueController : ControllerBase
             }));
         }
 
-        var ticket = await repository.GetByPlayerIdAsync(playerId, cancellationToken);
-        if (ticket is null)
-        {
-            return NotFound(new ProblemDetails
-            {
-                Title = "Queue ticket not found.",
-                Status = StatusCodes.Status404NotFound
-            });
-        }
-
         Response.StatusCode = StatusCodes.Status200OK;
         Response.ContentType = "text/event-stream";
         Response.Headers.CacheControl = "no-cache";
         Response.Headers.Append("X-Accel-Buffering", "no");
 
-        await WriteSseEventAsync(ToDto(ticket), cancellationToken);
+        await Response.WriteAsync("event: stream-open\n", cancellationToken);
+        await Response.WriteAsync($"data: {{\"playerId\":\"{playerId}\",\"connected\":true}}\n\n", cancellationToken);
+        await Response.Body.FlushAsync(cancellationToken);
+
+        QueueTicket? lastKnownTicket = null;
 
         while (!cancellationToken.IsCancellationRequested)
         {
-            if (ticket.Status != QueueStatus.Waiting)
-            {
-                break;
-            }
-
             await Task.Delay(StreamPollIntervalMs, cancellationToken);
 
             var current = await repository.GetByPlayerIdAsync(playerId, cancellationToken);
             if (current is null)
             {
-                break;
+                continue;
             }
 
-            if (current.Status != ticket.Status || current.MatchedAt != ticket.MatchedAt)
+            if (lastKnownTicket is null
+                || current.Status != lastKnownTicket.Status
+                || current.MatchedAt != lastKnownTicket.MatchedAt
+                || current.QueuedAt != lastKnownTicket.QueuedAt
+                || current.Sr != lastKnownTicket.Sr)
             {
                 await WriteSseEventAsync(ToDto(current), cancellationToken);
+                lastKnownTicket = current;
             }
 
-            ticket = current;
+            if (current.Status == QueueStatus.Waiting)
+            {
+                var opponent = (await repository.GetQueuedPlayersAsync(cancellationToken))
+                    .Where(ticket => ticket.PlayerId != playerId)
+                    .Where(ticket => Math.Abs(ticket.Sr - current.Sr) <= MaxSrDelta)
+                    .OrderBy(ticket => ticket.QueuedAt)
+                    .FirstOrDefault();
+
+                if (opponent is not null)
+                {
+                    var initialized = await upstreamClient.InitializeMatchmakingAsync(
+                        new Dictionary<Guid, decimal>
+                        {
+                            [playerId] = current.Sr,
+                            [opponent.PlayerId] = opponent.Sr
+                        },
+                        cancellationToken);
+
+                    if (initialized)
+                    {
+                        continue;
+                    }
+                }
+            }
+
+            if (current.Status != QueueStatus.Waiting)
+            {
+                break;
+            }
         }
 
         return new EmptyResult();
@@ -175,11 +214,15 @@ public sealed class QueueController : ControllerBase
         return NoContent();
     }
 
+
     private static QueueTicketDto ToDto(QueueTicket ticket)
     {
+        PlayerMatchMap.TryGetValue(ticket.PlayerId, out var matchId);
+
         return new QueueTicketDto
         {
             PlayerId = ticket.PlayerId,
+            MatchId = matchId == Guid.Empty ? null : matchId,
             Sr = ticket.Sr,
             Status = ticket.Status,
             QueuedAt = ticket.QueuedAt,

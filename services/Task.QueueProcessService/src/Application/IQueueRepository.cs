@@ -8,7 +8,7 @@ public interface IQueueRepository
 
     Task<QueueTicket?> GetByPlayerIdAsync(Guid playerId, CancellationToken cancellationToken);
 
-    Task<bool> RemoveAsync(Guid playerId, CancellationToken cancellationToken);
+    Task<IReadOnlyList<QueueTicket>> GetQueuedPlayersAsync(CancellationToken cancellationToken);
 
-    Task<IReadOnlyList<IReadOnlyList<Guid>>> FindMatchCandidateGroupsAsync(int minPlayers, decimal maxSrDelta, CancellationToken cancellationToken);
+    Task<bool> RemoveAsync(Guid playerId, CancellationToken cancellationToken);
 }

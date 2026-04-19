@@ -1,6 +1,8 @@
 using System.Text.Json;
 using Entity.MatchService.Application;
 using Entity.MatchService.Domain;
+using MassTransit;
+using MatchmakingProcessService.Application.Messaging;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -11,10 +13,12 @@ namespace Entity.MatchService.Api;
 public sealed class MatchController : ControllerBase
 {
     private readonly IMatchRepository repository;
+    private readonly IPublishEndpoint publishEndpoint;
 
-    public MatchController(IMatchRepository repository)
+    public MatchController(IMatchRepository repository, IPublishEndpoint publishEndpoint)
     {
         this.repository = repository;
+        this.publishEndpoint = publishEndpoint;
     }
 
     [HttpPost]
@@ -125,6 +129,13 @@ public sealed class MatchController : ControllerBase
                     Status = StatusCodes.Status404NotFound
                 });
             }
+
+            await publishEndpoint.Publish(new MatchUpdatedEvent
+            {
+                MatchId = updated.Id,
+                Status = updated.Status,
+                OccurredAt = DateTimeOffset.UtcNow
+            }, cancellationToken);
 
             return Ok(new MatchResultResponseDto
             {

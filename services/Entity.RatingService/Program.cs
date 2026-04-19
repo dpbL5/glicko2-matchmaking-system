@@ -1,5 +1,6 @@
 using Entity.RatingService.Application;
 using Entity.RatingService.Infrastructure;
+using MassTransit;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -23,6 +24,36 @@ builder.Services.AddDbContext<RatingDbContext>((serviceProvider, options) =>
 
 builder.Services.AddScoped<RatingDatabaseInitializer>();
 builder.Services.AddScoped<IRatingRepository, RatingRepository>();
+
+builder.Services.AddMassTransit(x =>
+{
+	x.UsingRabbitMq((_, cfg) =>
+	{
+		var host = builder.Configuration["RabbitMq:Host"]
+			?? Environment.GetEnvironmentVariable("RABBITMQ_HOST")
+			?? "rabbitmq";
+
+		var port = ResolveIntConfiguration(builder.Configuration["RabbitMq:Port"], Environment.GetEnvironmentVariable("RABBITMQ_PORT"), 5672);
+
+		var virtualHost = builder.Configuration["RabbitMq:VirtualHost"]
+			?? Environment.GetEnvironmentVariable("RABBITMQ_VHOST")
+			?? "/";
+
+		var username = builder.Configuration["RabbitMq:Username"]
+			?? Environment.GetEnvironmentVariable("RABBITMQ_USER")
+			?? "guest";
+
+		var password = builder.Configuration["RabbitMq:Password"]
+			?? Environment.GetEnvironmentVariable("RABBITMQ_PASSWORD")
+			?? "guest";
+
+		cfg.Host(host, (ushort)port, virtualHost, h =>
+		{
+			h.Username(username);
+			h.Password(password);
+		});
+	});
+});
 
 var app = builder.Build();
 
@@ -132,4 +163,19 @@ static void ValidateRatingDatabaseOptions(RatingDatabaseOptions options)
 	{
 		throw new InvalidOperationException($"Invalid database configuration: {string.Join(" ", errors)}");
 	}
+}
+
+static int ResolveIntConfiguration(string? configuredValue, string? envValue, int fallback)
+{
+	if (!string.IsNullOrWhiteSpace(envValue) && int.TryParse(envValue, out var parsedEnvValue))
+	{
+		return parsedEnvValue;
+	}
+
+	if (!string.IsNullOrWhiteSpace(configuredValue) && int.TryParse(configuredValue, out var parsedConfiguredValue))
+	{
+		return parsedConfiguredValue;
+	}
+
+	return fallback;
 }

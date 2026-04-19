@@ -49,11 +49,9 @@ builder.Services.AddDbContext<QueueDbContext>((serviceProvider, options) =>
 });
 
 builder.Services.AddScoped<QueueDatabaseInitializer>();
-builder.Services.AddScoped<BackgroundQueueRepository>();
-builder.Services.AddScoped<IQueueRepository>(serviceProvider => serviceProvider.GetRequiredService<BackgroundQueueRepository>());
+builder.Services.AddScoped<QueueRepository>();
+builder.Services.AddScoped<IQueueRepository, QueueRepository>();
 builder.Services.AddScoped<IQueueUpstreamClient, QueueUpstreamClient>();
-
-builder.Services.AddHostedService<MatchmakingWorker>();
 
 var app = builder.Build();
 

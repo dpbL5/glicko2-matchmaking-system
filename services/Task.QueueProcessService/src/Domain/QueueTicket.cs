@@ -11,7 +11,7 @@ public sealed class QueueTicket
     public decimal Sr { get; set; }
 
     [Required]
-    [MaxLength(32)]
+    [StringLength(32)]
     public string Status { get; set; } = QueueStatus.Waiting;
 
     [Required]

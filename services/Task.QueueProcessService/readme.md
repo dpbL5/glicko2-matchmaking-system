@@ -34,7 +34,6 @@ The Queue Process Service owns the waiting queue lifecycle, validates players be
 | `DB_PASSWORD` | Queue database password | `queuepass` |
 | `PLAYER_SERVICE_BASE_URL` | Internal Player Service base URL | `http://player-service:5001` |
 | `RATING_SERVICE_BASE_URL` | Internal Rating Service base URL | `http://rating-service:5005` |
-| `MATCHMAKING_PROCESS_SERVICE_BASE_URL` | Internal Matchmaking Process Service base URL | `http://matchmaking-process-service:5004` |
 
 Docker Compose maps these from `.env` queue-specific values (`QUEUE_DB_*`) into `DB_*` for this service.
 
@@ -75,4 +74,4 @@ Task.QueueProcessService/
 
 - The service uses environment variables bound into configuration and never hardcodes connection details.
 - Queue entries are persisted with an authoritative SR snapshot fetched from the Rating Service.
-- Candidate groups are selected by SR proximity, then delegated to Matchmaking Process Service for orchestration.
+- Matching is atomic inside the queue database transaction so selected players are removed from the waiting set together.

@@ -34,6 +34,20 @@ public sealed class QueueUpstreamClient : IQueueUpstreamClient
     public async Task<decimal?> GetCurrentRatingAsync(Guid playerId, CancellationToken cancellationToken)
     {
         var client = httpClientFactory.CreateClient("RatingService");
+
+        // Prefer the singular route from process flow docs, then fallback to plural route used by RatingService.
+        using var singularResponse = await client.GetAsync($"/rating/{playerId}", cancellationToken);
+        if (singularResponse.IsSuccessStatusCode)
+        {
+            var singularPayload = await singularResponse.Content.ReadFromJsonAsync<RatingResponseDto>(cancellationToken: cancellationToken);
+            return singularPayload?.Rating;
+        }
+
+        if (singularResponse.StatusCode != HttpStatusCode.NotFound)
+        {
+            throw new HttpRequestException($"Rating service returned {(int)singularResponse.StatusCode} ({singularResponse.ReasonPhrase}).", null, singularResponse.StatusCode);
+        }
+
         using var response = await client.GetAsync($"/ratings/{playerId}", cancellationToken);
 
         if (response.StatusCode == HttpStatusCode.NotFound)
@@ -50,13 +64,12 @@ public sealed class QueueUpstreamClient : IQueueUpstreamClient
         return payload?.Rating;
     }
 
-    public async Task<bool> InitializeMatchmakingAsync(IReadOnlyList<Guid> playerIds, string? queueId, CancellationToken cancellationToken)
+    public async Task<bool> InitializeMatchmakingAsync(IReadOnlyDictionary<Guid, decimal> playerRatings, CancellationToken cancellationToken)
     {
         var client = httpClientFactory.CreateClient("MatchmakingProcessService");
         using var response = await client.PostAsJsonAsync("/mm", new MatchInitRequestDto
         {
-            PlayerIds = playerIds.ToList(),
-            QueueId = queueId
+            PlayerIds = playerRatings.Keys.ToList(),
         }, cancellationToken);
 
         if (response.IsSuccessStatusCode)
@@ -80,7 +93,5 @@ public sealed class QueueUpstreamClient : IQueueUpstreamClient
     private sealed class MatchInitRequestDto
     {
         public List<Guid> PlayerIds { get; init; } = [];
-
-        public string? QueueId { get; init; }
     }
 }
