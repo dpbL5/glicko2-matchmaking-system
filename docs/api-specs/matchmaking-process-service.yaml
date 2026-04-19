@@ -1,0 +1,148 @@
+openapi: 3.0.3
+info:
+  title: Matchmaking Process Service API
+  version: 1.0.0
+  description: API contract for match initialization orchestration between queue and match services.
+servers:
+  - url: http://matchmaking-process-service:5004
+    description: Internal Docker network
+  - url: http://localhost:5004
+    description: Direct local access
+paths:
+  /health:
+    get:
+      summary: Health check
+      tags:
+        - Health
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+  /mm:
+    post:
+      summary: Initialize matchmaking workflow
+      tags:
+        - Matchmaking
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MatchInitRequest'
+      responses:
+        '202':
+          description: Matchmaking workflow initialized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MatchInitResult'
+        '400':
+          description: Invalid request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ValidationProblemDetails'
+        '409':
+          description: Workflow conflict while coordinating services
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '503':
+          description: Upstream service unavailable
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+components:
+  schemas:
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: ok
+      required:
+        - status
+    MatchInitRequest:
+      type: object
+      properties:
+        playerIds:
+          type: array
+          minItems: 2
+          uniqueItems: true
+          items:
+            type: string
+            format: uuid
+        queueId:
+          type: string
+          nullable: true
+          maxLength: 64
+      required:
+        - playerIds
+    MatchInitResult:
+      type: object
+      properties:
+        matchId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum:
+            - PENDING
+            - IN_PROGRESS
+            - FINISHED
+        playerIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+        dequeuedPlayerIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+        failedToDequeuePlayerIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+      required:
+        - matchId
+        - status
+        - playerIds
+        - dequeuedPlayerIds
+        - failedToDequeuePlayerIds
+    ProblemDetails:
+      type: object
+      properties:
+        type:
+          type: string
+          nullable: true
+        title:
+          type: string
+          nullable: true
+        status:
+          type: integer
+          format: int32
+          nullable: true
+        detail:
+          type: string
+          nullable: true
+        instance:
+          type: string
+          nullable: true
+    ValidationProblemDetails:
+      allOf:
+        - $ref: '#/components/schemas/ProblemDetails'
+        - type: object
+          properties:
+            errors:
+              type: object
+              additionalProperties:
+                type: array
+                items:
+                  type: string
