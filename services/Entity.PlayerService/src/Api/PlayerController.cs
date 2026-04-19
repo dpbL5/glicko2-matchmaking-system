@@ -6,7 +6,6 @@ using Microsoft.EntityFrameworkCore;
 
 [ApiController]
 [Route("players")]
-[Route("player")]
 public sealed class PlayerController : ControllerBase
 {
     private readonly IPlayerRepository repository;

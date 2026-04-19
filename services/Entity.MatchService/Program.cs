@@ -3,25 +3,19 @@ using Entity.MatchService.Infrastructure;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Options;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
 
-builder.Services
-    .AddOptions<MatchDatabaseOptions>()
-    .BindConfiguration(MatchDatabaseOptions.SectionName)
-    .Validate(options => !string.IsNullOrWhiteSpace(options.Host), "MatchDatabase:Host is required.")
-    .Validate(options => options.Port > 0 && options.Port <= 65535, "MatchDatabase:Port must be between 1 and 65535.")
-    .Validate(options => !string.IsNullOrWhiteSpace(options.Name), "MatchDatabase:Name is required.")
-    .Validate(options => !string.IsNullOrWhiteSpace(options.User), "MatchDatabase:User is required.")
-    .Validate(options => !string.IsNullOrWhiteSpace(options.Password), "MatchDatabase:Password is required.")
-    .ValidateOnStart();
+var matchDatabaseOptions = ResolveMatchDatabaseOptions(builder.Configuration);
+ValidateMatchDatabaseOptions(matchDatabaseOptions);
+
+builder.Services.AddSingleton(matchDatabaseOptions);
 
 builder.Services.AddDbContext<MatchDbContext>((serviceProvider, options) =>
 {
-    var dbOptions = serviceProvider.GetRequiredService<IOptions<MatchDatabaseOptions>>().Value;
+    var dbOptions = serviceProvider.GetRequiredService<MatchDatabaseOptions>();
     var connectionString = $"Server={dbOptions.Host};Port={dbOptions.Port};Database={dbOptions.Name};User={dbOptions.User};Password={dbOptions.Password};SslMode=None;AllowPublicKeyRetrieval=True;";
 
     options.UseMySql(connectionString, ServerVersion.AutoDetect(connectionString));
@@ -63,3 +57,79 @@ await using (var scope = app.Services.CreateAsyncScope())
 app.MapControllers();
 
 app.Run();
+
+static MatchDatabaseOptions ResolveMatchDatabaseOptions(IConfiguration configuration)
+{
+    var sectionOptions = configuration.GetSection(MatchDatabaseOptions.SectionName).Get<MatchDatabaseOptions>()
+        ?? new MatchDatabaseOptions();
+
+    var host = Environment.GetEnvironmentVariable("DB_HOST")
+        ?? Environment.GetEnvironmentVariable("MATCH_DB_HOST")
+        ?? sectionOptions.Host;
+
+    var name = Environment.GetEnvironmentVariable("DB_NAME")
+        ?? Environment.GetEnvironmentVariable("MATCH_DB_NAME")
+        ?? sectionOptions.Name;
+
+    var user = Environment.GetEnvironmentVariable("DB_USER")
+        ?? Environment.GetEnvironmentVariable("MATCH_DB_USER")
+        ?? sectionOptions.User;
+
+    var password = Environment.GetEnvironmentVariable("DB_PASSWORD")
+        ?? Environment.GetEnvironmentVariable("MATCH_DB_PASSWORD")
+        ?? sectionOptions.Password;
+
+    var port = sectionOptions.Port;
+    var configuredPort = Environment.GetEnvironmentVariable("DB_PORT")
+        ?? Environment.GetEnvironmentVariable("MATCH_DB_INTERNAL_PORT")
+        ?? Environment.GetEnvironmentVariable("MATCH_DB_PORT");
+
+    if (!string.IsNullOrWhiteSpace(configuredPort) && int.TryParse(configuredPort, out var parsedPort))
+    {
+        port = parsedPort;
+    }
+
+    return new MatchDatabaseOptions
+    {
+        Host = host,
+        Port = port,
+        Name = name,
+        User = user,
+        Password = password
+    };
+}
+
+static void ValidateMatchDatabaseOptions(MatchDatabaseOptions options)
+{
+    var errors = new List<string>();
+
+    if (string.IsNullOrWhiteSpace(options.Host))
+    {
+        errors.Add("DB_HOST (or MATCH_DB_HOST / MatchDatabase:Host) is required.");
+    }
+
+    if (options.Port <= 0 || options.Port > 65535)
+    {
+        errors.Add("DB_PORT must be between 1 and 65535.");
+    }
+
+    if (string.IsNullOrWhiteSpace(options.Name))
+    {
+        errors.Add("DB_NAME (or MATCH_DB_NAME / MatchDatabase:Name) is required.");
+    }
+
+    if (string.IsNullOrWhiteSpace(options.User))
+    {
+        errors.Add("DB_USER (or MATCH_DB_USER / MatchDatabase:User) is required.");
+    }
+
+    if (string.IsNullOrWhiteSpace(options.Password))
+    {
+        errors.Add("DB_PASSWORD (or MATCH_DB_PASSWORD / MatchDatabase:Password) is required.");
+    }
+
+    if (errors.Count > 0)
+    {
+        throw new InvalidOperationException($"Invalid database configuration: {string.Join(" ", errors)}");
+    }
+}

@@ -110,3 +110,5 @@ coverage/
 .pytest_cache/
 htmlcov/
 test-results/
+
+data/

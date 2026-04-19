@@ -2,32 +2,60 @@
 
 ## Overview
 
-The Rating Service owns player rating data and exposes APIs to read, update, and calculate ratings.
+The Rating Service owns player rating data and exposes APIs to read, update, and recalculate ratings after match results.
 
 ## API Endpoints
 
 | Method | Endpoint | Description |
 |---|---|---|
 | GET | `/health` | Health check returning `{"status":"ok"}` |
-| GET | `/rating/{id}` | Get rating by player id |
-| POST | `/rating/{id}` | Update rating by player id |
-| POST | `/glicko2` | Calculate updated rating from match result |
+| GET | `/ratings/{id}` | Get rating by player id |
+| POST | `/ratings/{id}` | Update rating by player id |
+| POST | `/ratings/{id}/recalculate` | Recalculate rating from match result |
+
+Compatibility routes are also exposed at `/rating/{id}` and `/rating/{id}/recalculate` for existing callers.
 
 ## Environment Variables
 
-| Variable | Description | Default |
-|---|---|---|
-| `RATING_DB_HOST` | Rating database host | `rating-db` |
-| `RATING_DB_PORT` | Host port exposed by Docker Compose | `5435` |
-| `RATING_DB_INTERNAL_PORT` | MySQL container port used by service | `3306` |
-| `RATING_DB_NAME` | Database name | `ratingdb` |
-| `RATING_DB_USER` | Database user | `rating` |
-| `RATING_DB_PASSWORD` | Database password | `ratingpass` |
-| `RATING_DB_ROOT_PASSWORD` | Root password for DB container | `rootpass` |
-| `RATING_SERVICE_PORT` | Host port exposed by Docker Compose | `5005` |
+The service reads DB settings from the following variables (as required by architecture and compose setup):
 
-## Running Locally
+| Variable | Description | Example |
+|---|---|---|
+| `DB_HOST` | Rating database hostname on Docker network | `rating-db` |
+| `DB_PORT` | Rating database port used by the service | `3306` |
+| `DB_NAME` | Rating database name | `ratingdb` |
+| `DB_USER` | Database username | `rating` |
+| `DB_PASSWORD` | Database password | `ratingpass` |
+
+Docker Compose maps these values from `.env` so secrets/config are externalized.
+
+## Setup
+
+1. Ensure `.env` exists (copy from `.env.example` if needed).
+2. Start the service and database:
 
 ```bash
-docker compose up rating-db rating-service --build
+docker compose up --build rating-db rating-service
 ```
+
+3. Verify health:
+
+```bash
+curl http://localhost:5005/health
+```
+
+Expected response:
+
+```json
+{"status":"ok"}
+```
+
+## Gateway Access
+
+- Direct service: `http://localhost:5005/ratings/{id}`
+- Through gateway: `http://localhost:8080/api/rating/{id}`
+
+## Notes
+
+- The service listens on port `5005` inside the container.
+- Database schema and seed rating records are created automatically on first startup.

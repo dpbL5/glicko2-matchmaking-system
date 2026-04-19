@@ -18,30 +18,51 @@ The Match Service owns match records and exposes REST endpoints for match creati
 | Method | Endpoint | Description |
 |---|---|---|
 | GET | `/health` | Health check returning `{"status":"ok"}` |
-| POST | `/match` | Create match record |
-| GET | `/match/{id}` | Get match by id |
-| POST | `/match/{id}/result` | Update match status and result |
+| POST | `/matches` | Create match record |
+| GET | `/matches/{id}` | Get match by id |
+| POST | `/matches/{id}/result` | Update match status and result |
+
+Compatibility routes are also exposed at `/match`, `/match/{id}`, and `/match/{id}/result` for existing callers.
 
 ## Environment Variables
 
-| Variable | Description | Default |
-|---|---|---|
-| `MATCH_DB_HOST` | Match database host | `match-db` |
-| `MATCH_DB_PORT` | Host port exposed by Docker Compose | `5433` |
-| `MATCH_DB_INTERNAL_PORT` | MySQL container port used by the service | `3306` |
-| `MATCH_DB_NAME` | Database name | `matchdb` |
-| `MATCH_DB_USER` | Database user | `match` |
-| `MATCH_DB_PASSWORD` | Database password | `matchpass` |
-| `MATCH_DB_ROOT_PASSWORD` | Root password for the DB container | `rootpass` |
-| `MATCH_SERVICE_PORT` | Host port exposed by Docker Compose | `5002` |
+The service reads DB settings from the following variables (as required by architecture and compose setup):
 
-## Running Locally
+| Variable | Description | Example |
+|---|---|---|
+| `DB_HOST` | Match database hostname on Docker network | `match-db` |
+| `DB_PORT` | Match database port used by the service | `3306` |
+| `DB_NAME` | Match database name | `matchdb` |
+| `DB_USER` | Database username | `match` |
+| `DB_PASSWORD` | Database password | `matchpass` |
+
+Docker Compose maps these values from `.env` so secrets/config are externalized.
+
+## Setup
+
+1. Ensure `.env` exists (copy from `.env.example` if needed).
+2. Start the service and database:
 
 ```bash
-docker compose up match-db match-service --build
+docker compose up --build match-db match-service
 ```
 
-The service listens on port `5002` inside the container and is exposed through the API gateway at `/api/match/*`.
+3. Verify health:
+
+```bash
+curl http://localhost:5002/health
+```
+
+Expected response:
+
+```json
+{"status":"ok"}
+```
+
+## Gateway Access
+
+- Direct service: `http://localhost:5002/matches`
+- Through gateway: `http://localhost:8080/api/match` and `http://localhost:8080/api/matches`
 
 ## Project Structure
 
@@ -74,5 +95,5 @@ Entity.MatchService/
 
 ## Notes
 
-- The service uses environment variables bound into configuration and never hardcodes connection details.
-- Match records are persisted automatically and can be updated later with the final match result.
+- The service listens on port `5002` inside the container.
+- Match records are persisted in the Match database and can be updated after results are submitted.

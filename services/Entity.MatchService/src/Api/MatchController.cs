@@ -2,11 +2,12 @@ using System.Text.Json;
 using Entity.MatchService.Application;
 using Entity.MatchService.Domain;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace Entity.MatchService.Api;
 
 [ApiController]
-[Route("match")]
+[Route("matches")]
 public sealed class MatchController : ControllerBase
 {
     private readonly IMatchRepository repository;
@@ -17,6 +18,9 @@ public sealed class MatchController : ControllerBase
     }
 
     [HttpPost]
+    [ProducesResponseType(typeof(MatchDto), StatusCodes.Status201Created)]
+    [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status503ServiceUnavailable)]
     public async Task<IActionResult> CreateMatch([FromBody] MatchCreateRequestDto request, CancellationToken cancellationToken)
     {
         var validationErrors = ValidateCreateRequest(request);
@@ -25,18 +29,34 @@ public sealed class MatchController : ControllerBase
             return BadRequest(new ValidationProblemDetails(validationErrors));
         }
 
-        var created = await repository.CreateAsync(new Match
+        try
         {
-            Id = Guid.NewGuid(),
-            Status = MatchStatus.Pending,
-            PlayerIdsJson = JsonSerializer.Serialize(request.PlayerIds),
-            QueueId = string.IsNullOrWhiteSpace(request.QueueId) ? null : request.QueueId.Trim()
-        }, cancellationToken);
+            var created = await repository.CreateAsync(new Match
+            {
+                Id = Guid.NewGuid(),
+                Status = MatchStatus.Pending,
+                PlayerIdsJson = JsonSerializer.Serialize(request.PlayerIds),
+                QueueId = string.IsNullOrWhiteSpace(request.QueueId) ? null : request.QueueId.Trim()
+            }, cancellationToken);
 
-        return CreatedAtAction(nameof(GetMatchById), new { id = created.Id }, ToDto(created));
+            return CreatedAtAction(nameof(GetMatchById), new { id = created.Id }, ToDto(created));
+        }
+        catch (DbUpdateException ex)
+        {
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, new ProblemDetails
+            {
+                Title = "Database is unavailable.",
+                Detail = ex.Message,
+                Status = StatusCodes.Status503ServiceUnavailable
+            });
+        }
     }
 
     [HttpGet("{id:guid}")]
+    [ProducesResponseType(typeof(MatchDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status503ServiceUnavailable)]
     public async Task<IActionResult> GetMatchById(Guid id, CancellationToken cancellationToken)
     {
         if (id == Guid.Empty)
@@ -47,20 +67,37 @@ public sealed class MatchController : ControllerBase
             }));
         }
 
-        var match = await repository.GetByIdAsync(id, cancellationToken);
-        if (match is null)
+        try
         {
-            return NotFound(new ProblemDetails
+            var match = await repository.GetByIdAsync(id, cancellationToken);
+            if (match is null)
             {
-                Title = "Match not found.",
-                Status = StatusCodes.Status404NotFound
+                return NotFound(new ProblemDetails
+                {
+                    Title = "Match not found.",
+                    Status = StatusCodes.Status404NotFound
+                });
+            }
+
+            return Ok(ToDto(match));
+        }
+        catch (DbUpdateException ex)
+        {
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, new ProblemDetails
+            {
+                Title = "Database is unavailable.",
+                Detail = ex.Message,
+                Status = StatusCodes.Status503ServiceUnavailable
             });
         }
-
-        return Ok(ToDto(match));
     }
 
+    [HttpPost("{id:guid}")]
     [HttpPost("{id:guid}/result")]
+    [ProducesResponseType(typeof(MatchResultResponseDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status503ServiceUnavailable)]
     public async Task<IActionResult> UpdateResult(Guid id, [FromBody] MatchResultRequestDto request, CancellationToken cancellationToken)
     {
         if (id == Guid.Empty)
@@ -77,21 +114,33 @@ public sealed class MatchController : ControllerBase
             return BadRequest(new ValidationProblemDetails(validationErrors));
         }
 
-        var updated = await repository.UpdateResultAsync(id, request.Winner.Trim(), request.Result.Trim(), cancellationToken);
-        if (updated is null)
+        try
         {
-            return NotFound(new ProblemDetails
+            var updated = await repository.UpdateResultAsync(id, request.Winner.Trim(), request.Result.Trim(), cancellationToken);
+            if (updated is null)
             {
-                Title = "Match not found.",
-                Status = StatusCodes.Status404NotFound
+                return NotFound(new ProblemDetails
+                {
+                    Title = "Match not found.",
+                    Status = StatusCodes.Status404NotFound
+                });
+            }
+
+            return Ok(new MatchResultResponseDto
+            {
+                MatchId = updated.Id,
+                Status = updated.Status
             });
         }
-
-        return Ok(new MatchResultResponseDto
+        catch (DbUpdateException ex)
         {
-            MatchId = updated.Id,
-            Status = updated.Status
-        });
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, new ProblemDetails
+            {
+                Title = "Database is unavailable.",
+                Detail = ex.Message,
+                Status = StatusCodes.Status503ServiceUnavailable
+            });
+        }
     }
 
     private static MatchDto ToDto(Match match)

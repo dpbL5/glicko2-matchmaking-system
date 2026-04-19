@@ -1,11 +1,12 @@
 using Entity.RatingService.Application;
 using Entity.RatingService.Domain;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace Entity.RatingService.Api;
 
 [ApiController]
-[Route("rating")]
+[Route("ratings")]
 public sealed class RatingController : ControllerBase
 {
     private readonly IRatingRepository repository;
@@ -16,6 +17,10 @@ public sealed class RatingController : ControllerBase
     }
 
     [HttpGet("{id:guid}")]
+    [ProducesResponseType(typeof(PlayerRatingDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status503ServiceUnavailable)]
     public async Task<IActionResult> GetById(Guid id, CancellationToken cancellationToken)
     {
         if (id == Guid.Empty)
@@ -26,20 +31,36 @@ public sealed class RatingController : ControllerBase
             }));
         }
 
-        var rating = await repository.GetByPlayerIdAsync(id, cancellationToken);
-        if (rating is null)
+        try
         {
-            return NotFound(new ProblemDetails
+            var rating = await repository.GetByPlayerIdAsync(id, cancellationToken);
+            if (rating is null)
             {
-                Title = "Rating not found.",
-                Status = StatusCodes.Status404NotFound
+                return NotFound(new ProblemDetails
+                {
+                    Title = "Rating not found.",
+                    Status = StatusCodes.Status404NotFound
+                });
+            }
+
+            return Ok(ToDto(rating));
+        }
+        catch (DbUpdateException ex)
+        {
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, new ProblemDetails
+            {
+                Title = "Database is unavailable.",
+                Detail = ex.Message,
+                Status = StatusCodes.Status503ServiceUnavailable
             });
         }
-
-        return Ok(ToDto(rating));
     }
 
     [HttpPost("{id:guid}")]
+    [ProducesResponseType(typeof(PlayerRatingDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status503ServiceUnavailable)]
     public async Task<IActionResult> UpdateById(Guid id, [FromBody] RatingUpdateRequestDto request, CancellationToken cancellationToken)
     {
         if (id == Guid.Empty)
@@ -47,6 +68,14 @@ public sealed class RatingController : ControllerBase
             return BadRequest(new ValidationProblemDetails(new Dictionary<string, string[]>
             {
                 ["id"] = new[] { "Player id is required." }
+            }));
+        }
+
+        if (request is null)
+        {
+            return BadRequest(new ValidationProblemDetails(new Dictionary<string, string[]>
+            {
+                ["request"] = new[] { "Request body is required." }
             }));
         }
 
@@ -58,24 +87,117 @@ public sealed class RatingController : ControllerBase
             }));
         }
 
-        var updated = await repository.UpdateAsync(new PlayerRating
+        try
         {
-            PlayerId = id,
-            Rating = request.Rating,
-            Rd = request.Rd,
-            Volatility = request.Volatility
-        }, cancellationToken);
-
-        if (updated is null)
-        {
-            return NotFound(new ProblemDetails
+            var updated = await repository.UpdateAsync(new PlayerRating
             {
-                Title = "Rating not found.",
-                Status = StatusCodes.Status404NotFound
+                PlayerId = id,
+                Rating = request.Rating,
+                Rd = request.Rd,
+                Volatility = request.Volatility
+            }, cancellationToken);
+
+            if (updated is null)
+            {
+                return NotFound(new ProblemDetails
+                {
+                    Title = "Rating not found.",
+                    Status = StatusCodes.Status404NotFound
+                });
+            }
+
+            return Ok(ToDto(updated));
+        }
+        catch (DbUpdateException ex)
+        {
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, new ProblemDetails
+            {
+                Title = "Database is unavailable.",
+                Detail = ex.Message,
+                Status = StatusCodes.Status503ServiceUnavailable
             });
         }
+    }
 
-        return Ok(ToDto(updated));
+    [HttpPost("{id:guid}/recalculate")]
+    [ProducesResponseType(typeof(PlayerRatingDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status503ServiceUnavailable)]
+    public async Task<IActionResult> RecalculateById(Guid id, [FromBody] RatingRecalculateRequestDto request, CancellationToken cancellationToken)
+    {
+        if (id == Guid.Empty)
+        {
+            return BadRequest(new ValidationProblemDetails(new Dictionary<string, string[]>
+            {
+                ["id"] = new[] { "Player id is required." }
+            }));
+        }
+
+        if (request is null)
+        {
+            return BadRequest(new ValidationProblemDetails(new Dictionary<string, string[]>
+            {
+                ["request"] = new[] { "Request body is required." }
+            }));
+        }
+
+        Glicko2MatchResult matchResult;
+        try
+        {
+            matchResult = Glicko2Calculator.ParseMatchResult(request.MatchResult);
+        }
+        catch (ArgumentException exception)
+        {
+            return BadRequest(new ValidationProblemDetails(new Dictionary<string, string[]>
+            {
+                ["matchResult"] = new[] { exception.Message }
+            }));
+        }
+
+        if (request.OpponentRatings.Any(value => value < 0))
+        {
+            return BadRequest(new ValidationProblemDetails(new Dictionary<string, string[]>
+            {
+                ["opponentRatings"] = new[] { "Opponent ratings must be non-negative." }
+            }));
+        }
+
+        try
+        {
+            var current = await repository.GetByPlayerIdAsync(id, cancellationToken);
+            if (current is null)
+            {
+                return NotFound(new ProblemDetails
+                {
+                    Title = "Rating not found.",
+                    Status = StatusCodes.Status404NotFound
+                });
+            }
+
+            var recalculated = Glicko2Calculator.Calculate(current, matchResult, request.OpponentRatings);
+            var updated = await repository.UpdateAsync(recalculated, cancellationToken);
+
+            if (updated is null)
+            {
+                return NotFound(new ProblemDetails
+                {
+                    Title = "Rating not found.",
+                    Status = StatusCodes.Status404NotFound
+                });
+            }
+
+            return Ok(ToDto(updated));
+        }
+        catch (DbUpdateException ex)
+        {
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, new ProblemDetails
+            {
+                Title = "Database is unavailable.",
+                Detail = ex.Message,
+                Status = StatusCodes.Status503ServiceUnavailable
+            });
+        }
     }
 
     private static PlayerRatingDto ToDto(PlayerRating rating)
