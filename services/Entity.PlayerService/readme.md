@@ -2,68 +2,68 @@
 
 ## Overview
 
-The Player Service owns player profile data and exposes read-only REST endpoints for player lookup.
+The Player Service owns player profile data and provides read-only player lookup endpoints.
 
 ## Tech Stack
 
 | Component | Choice |
 |---|---|
 | Language | C# |
-| Framework | .NET 9 / ASP.NET Core Minimal API |
-| Database | MySQL 8.4 |
-| ORM | Entity Framework Core (Pomelo MySQL provider) |
+| Framework | ASP.NET Core (.NET 9) |
+| Database | MySQL 8 |
+| ORM | Entity Framework Core + Pomelo |
 
 ## API Endpoints
 
 | Method | Endpoint | Description |
 |---|---|---|
 | GET | `/health` | Health check returning `{"status":"ok"}` |
-| GET | `/player` | List all players |
-| GET | `/player/{id}` | Get a player by id |
+| GET | `/players` | List all players |
+| GET | `/players/{id}` | Get player by id |
+
+Compatibility routes are also exposed at `/player` and `/player/{id}` for existing callers.
 
 ## Environment Variables
 
-| Variable | Description | Default |
-|---|---|---|
-| `PLAYER_DB_HOST` | Player database host | `player-db` |
-| `PLAYER_DB_PORT` | Host port exposed by Docker Compose | `5432` |
-| `PLAYER_DB_INTERNAL_PORT` | MySQL container port used by the service | `3306` |
-| `PLAYER_DB_NAME` | Database name | `playerdb` |
-| `PLAYER_DB_USER` | Database user | `player` |
-| `PLAYER_DB_PASSWORD` | Database password | `playerpass` |
-| `PLAYER_DB_ROOT_PASSWORD` | Root password for the DB container | `rootpass` |
-| `PLAYER_SERVICE_PORT` | Host port exposed by Docker Compose | `5001` |
+The service reads DB settings from the following variables (as required by architecture and compose setup):
 
-## Running Locally
+| Variable | Description | Example |
+|---|---|---|
+| `DB_HOST` | Player database hostname on Docker network | `player-db` |
+| `DB_PORT` | Player database port used by the service | `3306` |
+| `DB_NAME` | Player database name | `playerdb` |
+| `DB_USER` | Database username | `player` |
+| `DB_PASSWORD` | Database password | `playerpass` |
+
+Docker Compose maps these values from `.env` so secrets/config are externalized.
+
+## Setup
+
+1. Ensure `.env` exists (copy from `.env.example` if needed).
+2. Start the service and database:
 
 ```bash
-docker compose up player-db player-service --build
+docker compose up --build player-db player-service
 ```
 
-The service listens on port `5001` inside the container and is exposed through the API gateway at `/api/player/*`.
+3. Verify health:
 
-## Project Structure
+```bash
+curl http://localhost:5001/health
+```
 
+Expected response:
+
+```json
+{"status":"ok"}
 ```
-Entity.PlayerService/
-├── Dockerfile
-├── Entity.PlayerService.csproj
-├── Program.cs
-├── appsettings.json
-├── readme.md
-└── src/
-    ├── Domain/
-    │   └── PlayerRecord.cs
-    └── Infrastructure/
-        ├── EfPlayerRepository.cs
-        ├── IPlayerRepository.cs
-        ├── PlayerDbContext.cs
-        ├── PlayerEntity.cs
-        ├── PlayerDatabaseInitializer.cs
-        └── PlayerDatabaseOptions.cs
-```
+
+## Gateway Access
+
+- Direct service: `http://localhost:5001/players`
+- Through gateway: `http://localhost:8080/api/player` and `http://localhost:8080/api/player/{id}`
 
 ## Notes
 
-- The service uses environment variables bound into configuration and never hardcodes connection details.
-- Seed data is inserted automatically on first start if the `players` table is empty.
+- The service listens on port `5001` inside the container.
+- Database schema and seed records are created automatically on first startup.
