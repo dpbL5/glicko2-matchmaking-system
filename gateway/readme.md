@@ -36,5 +36,7 @@ docker compose up -d gateway
 
 ## Notes
 
-- Traefik config lives in `gateway/traefik/`.
-- The old .NET gateway implementation has been removed.
+- Traefik config lives in `gateway/traefik/` — all routing rules defined in YAML
+- Static config: `traefik.yml` (entrypoint, file provider)
+- Dynamic config: `dynamic.yml` (routers, middlewares, backend services)
+- No application code needed — Traefik handles all routing and proxying

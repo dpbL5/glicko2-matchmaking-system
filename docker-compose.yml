@@ -15,39 +15,222 @@ services:
 
   # ─── API Gateway ─────────────────────────────────
   gateway:
-    build: ./gateway
+    image: traefik:v3.0
+    command:
+      - --configFile=/etc/traefik/traefik.yml
     ports:
-      - "${GATEWAY_PORT:-8080}:8000"
+      - "8080:8000"
+    volumes:
+      - ./gateway/traefik/traefik.yml/traefik.yml:/etc/traefik/traefik.yml:ro
+      - ./gateway/traefik/dynamic.yml/dynamic.yml:/etc/traefik/dynamic.yml:ro
     depends_on:
-      - service-a
-      - service-b
+      - player-service
+      - queue-service
+      - match-service
+      - matchmaking-process-service
+      - rating-service
+    networks:
+      - app-network
+      
+  # ─── Player Service ──────────────────────────────
+  player-service:
+    build: ./services/Entity.PlayerService
+    ports:
+      - "${PLAYER_SERVICE_PORT:-5001}:5001"
+    env_file:
+      - .env
+    environment:
+      ASPNETCORE_URLS: http://+:5001
+      DB_HOST: ${PLAYER_DB_HOST:-player-db}
+      DB_PORT: ${PLAYER_DB_INTERNAL_PORT:-3306}
+      DB_NAME: ${PLAYER_DB_NAME:-playerdb}
+      DB_USER: ${PLAYER_DB_USER:-player}
+      DB_PASSWORD: ${PLAYER_DB_PASSWORD:-playerpass}
+    depends_on:
+      player-db:
+        condition: service_healthy
     networks:
       - app-network
 
-  # ─── Service A ───────────────────────────────────
-  service-a:
-    build: ./services/service-a
+  # ─── Queue Process Service ───────────────────────
+  queue-service:
+    build: ./services/Task.QueueProcessService
     ports:
-      - "${SERVICE_A_PORT:-5001}:5000"
+      - "${QUEUE_SERVICE_PORT:-5003}:5003"
     env_file:
       - .env
+    environment:
+      ASPNETCORE_URLS: http://+:5003
+      DB_HOST: ${QUEUE_DB_HOST:-queue-db}
+      DB_PORT: ${QUEUE_DB_INTERNAL_PORT:-3306}
+      DB_NAME: ${QUEUE_DB_NAME:-queuedb}
+      DB_USER: ${QUEUE_DB_USER:-queue}
+      DB_PASSWORD: ${QUEUE_DB_PASSWORD:-queuepass}
+      PLAYER_SERVICE_BASE_URL: ${PLAYER_SERVICE_BASE_URL:-http://player-service:5001}
+      RATING_SERVICE_BASE_URL: ${RATING_SERVICE_BASE_URL:-http://rating-service:5005}
+      MATCHMAKING_PROCESS_SERVICE_BASE_URL: ${MATCHMAKING_PROCESS_SERVICE_BASE_URL:-http://matchmaking-process-service:5004}
+    depends_on:
+      queue-db:
+        condition: service_healthy
+      player-service:
+        condition: service_started
+      rating-service:
+        condition: service_started
     networks:
       - app-network
-    # healthcheck:
-    #   test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
-    #   interval: 30s
-    #   timeout: 10s
-    #   retries: 3
 
-  # ─── Service B ───────────────────────────────────
-  service-b:
-    build: ./services/service-b
+  # ─── Match Service ───────────────────────────────
+  match-service:
+    build: ./services/Entity.MatchService
     ports:
-      - "${SERVICE_B_PORT:-5002}:5000"
+      - "${MATCH_SERVICE_PORT:-5002}:5002"
     env_file:
       - .env
+    environment:
+      ASPNETCORE_URLS: http://+:5002
+      DB_HOST: ${MATCH_DB_HOST:-match-db}
+      DB_PORT: ${MATCH_DB_INTERNAL_PORT:-3306}
+      DB_NAME: ${MATCH_DB_NAME:-matchdb}
+      DB_USER: ${MATCH_DB_USER:-match}
+      DB_PASSWORD: ${MATCH_DB_PASSWORD:-matchpass}
+    depends_on:
+      match-db:
+        condition: service_healthy
     networks:
       - app-network
+
+  # ─── Matchmaking Process Service ────────────────
+  matchmaking-process-service:
+    build: ./services/Task.MatchmakingProcessService
+    ports:
+      - "${MATCHMAKING_PROCESS_SERVICE_PORT:-5004}:5004"
+    env_file:
+      - .env
+    environment:
+      ASPNETCORE_URLS: http://+:5004
+      MATCH_SERVICE_BASE_URL: ${MATCH_SERVICE_BASE_URL:-http://match-service:5002}
+      QUEUE_SERVICE_BASE_URL: ${QUEUE_SERVICE_BASE_URL:-http://queue-service:5003}
+      RABBITMQ_HOST: ${RABBITMQ_HOST:-rabbitmq}
+      RABBITMQ_PORT: ${RABBITMQ_PORT:-5672}
+      RABBITMQ_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-guest}
+    depends_on:
+      match-service:
+        condition: service_started
+      queue-service:
+        condition: service_started
+      rabbitmq:
+        condition: service_started
+    networks:
+      - app-network
+
+  # ─── Rating Service ──────────────────────────────
+  rating-service:
+    build: ./services/Entity.RatingService
+    ports:
+      - "${RATING_SERVICE_PORT:-5005}:5005"
+    env_file:
+      - .env
+    environment:
+      ASPNETCORE_URLS: http://+:5005
+      DB_HOST: ${RATING_DB_HOST:-rating-db}
+      DB_PORT: ${RATING_DB_INTERNAL_PORT:-3306}
+      DB_NAME: ${RATING_DB_NAME:-ratingdb}
+      DB_USER: ${RATING_DB_USER:-rating}
+      DB_PASSWORD: ${RATING_DB_PASSWORD:-ratingpass}
+    depends_on:
+      rating-db:
+        condition: service_healthy
+    networks:
+      - app-network
+
+  # ─── Player Database ─────────────────────────────
+  player-db:
+    image: mysql:8.0
+    ports:
+      - "${PLAYER_DB_PORT:-5432}:3306"
+    env_file:
+      - .env
+    environment:
+      MYSQL_DATABASE: ${PLAYER_DB_NAME:-playerdb}
+      MYSQL_USER: ${PLAYER_DB_USER:-player}
+      MYSQL_PASSWORD: ${PLAYER_DB_PASSWORD:-playerpass}
+      MYSQL_ROOT_PASSWORD: ${PLAYER_DB_ROOT_PASSWORD:-rootpass}
+    volumes:
+      - player-db-data:/var/lib/mysql
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u root -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # ─── Queue Database ──────────────────────────────
+  queue-db:
+    image: mysql:8.0
+    ports:
+      - "${QUEUE_DB_PORT:-5434}:3306"
+    env_file:
+      - .env
+    environment:
+      MYSQL_DATABASE: ${QUEUE_DB_NAME:-queuedb}
+      MYSQL_USER: ${QUEUE_DB_USER:-queue}
+      MYSQL_PASSWORD: ${QUEUE_DB_PASSWORD:-queuepass}
+      MYSQL_ROOT_PASSWORD: ${QUEUE_DB_ROOT_PASSWORD:-rootpass}
+    volumes:
+      - queue-db-data:/var/lib/mysql
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u root -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # ─── Match Database ──────────────────────────────
+  match-db:
+    image: mysql:8.0
+    ports:
+      - "${MATCH_DB_PORT:-5433}:3306"
+    env_file:
+      - .env
+    environment:
+      MYSQL_DATABASE: ${MATCH_DB_NAME:-matchdb}
+      MYSQL_USER: ${MATCH_DB_USER:-match}
+      MYSQL_PASSWORD: ${MATCH_DB_PASSWORD:-matchpass}
+      MYSQL_ROOT_PASSWORD: ${MATCH_DB_ROOT_PASSWORD:-rootpass}
+    volumes:
+      - match-db-data:/var/lib/mysql
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u root -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # ─── Rating Database ─────────────────────────────
+  rating-db:
+    image: mysql:8.0
+    ports:
+      - "${RATING_DB_PORT:-5435}:3306"
+    env_file:
+      - .env
+    environment:
+      MYSQL_DATABASE: ${RATING_DB_NAME:-ratingdb}
+      MYSQL_USER: ${RATING_DB_USER:-rating}
+      MYSQL_PASSWORD: ${RATING_DB_PASSWORD:-ratingpass}
+      MYSQL_ROOT_PASSWORD: ${RATING_DB_ROOT_PASSWORD:-rootpass}
+    volumes:
+      - rating-db-data:/var/lib/mysql
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u root -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
 
   # ─── Shared Infrastructure (uncomment as needed) ─
   # db:
@@ -70,17 +253,23 @@ services:
   #   networks:
   #     - app-network
 
-  # rabbitmq:
-  #   image: rabbitmq:3-management-alpine
-  #   ports:
-  #     - "5672:5672"
-  #     - "15672:15672"
-  #   networks:
-  #     - app-network
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    ports:
+      - "${RABBITMQ_PORT:-5672}:5672"
+      - "${RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-guest}
+    networks:
+      - app-network
 
 networks:
   app-network:
     driver: bridge
 
-# volumes:
-#   db-data:
+volumes:
+  player-db-data:
+  queue-db-data:
+  match-db-data:
+  rating-db-data:

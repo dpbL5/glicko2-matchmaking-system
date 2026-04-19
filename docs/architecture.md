@@ -54,7 +54,7 @@ Select patterns based on business/technical justifications from your analysis.
 | API Gateway | X | Frontend uses a single entry point for routing, CORS, and request isolation |
 | Database per Service | X | Player, Match, Queue, and Rating services each own their own data and persistence lifecycle |
 | Shared Database | | |
-| Saga | X | Matchmaking, result handling, and rating updates form a long-running workflow across multiple services |
+| Saga | X | Result handling, and rating updates form a long-running workflow across multiple services |
 | Event-driven / Message Queue | X | Match end and rating update events are exchanged through a broker |
 | CQRS | | |
 | Circuit Breaker | | |
@@ -70,7 +70,7 @@ Select patterns based on business/technical justifications from your analysis.
 | Component     | Responsibility | Tech Stack      | Port  |
 |---------------|----------------|-----------------|-------|
 | **Frontend**  | Player UI, queue status stream, match/result display, Game Server simulation | Vue.js | 3000  |
-| **Gateway**   | Single entry point, routing, CORS, request isolation, SSE relay | .NET 9 | 8080  |
+| **Gateway**   | Single entry point, routing, CORS, request isolation, SSE relay | Traefik | 8080  |
 | **Player Service** | Player profiles and player lookup | .NET 9 | 5001  |
 | **Match Service** | Match record creation and result persistence | .NET 9 | 5002  |
 | **Queue Process Service** | Queue ticket lifecycle, SR snapshot, and opponent search | .NET 9 | 5003  |

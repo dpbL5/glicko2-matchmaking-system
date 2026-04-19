@@ -26,24 +26,36 @@ Player queues up for a match, the matchmaking system begins searching for suitab
 
 ## Architecture
 
-*(Paste or update the architecture diagram from [`docs/architecture.md`](docs/architecture.md) here.)*
-
 ```mermaid
 graph LR
     U[User] --> FE[Frontend :3000]
     FE --> GW[API Gateway :8080]
-    GW --> SA[Service A :5001]
-    GW --> SB[Service B :5002]
-    SA --> DB1[(Database A)]
-    SB --> DB2[(Database B)]
+    GW --> PS[Player Service :5001]
+    GW --> QS[Queue Service :5003]
+    GW --> MS[Match Service :5002]
+    GW --> RS[Rating Service :5005]
+    GW --> MPS[Matchmaking Process :5004]
+    
+    MPS --> RB[(RabbitMQ)]
+    RS --> RB
+    MS --> RB
+    
+    PS --> PDB[(Player DB)]
+    QS --> QDB[(Queue DB)]
+    MS --> MDB[(Match DB)]
+    RS --> RDB[(Rating DB)]
 ```
 
-| Component     | Responsibility | Tech Stack | Port |
-|---------------|----------------|------------|------|
-| **Frontend**  |                |            | 3000 |
-| **Gateway**   |                |            | 8080 |
-| **Service A** |                |            | 5001 |
-| **Service B** |                |            | 5002 |
+| Component | Responsibility | Tech Stack | Port |
+|-----------|-----------------|------------|------|
+| **Frontend** | User interface, queue & match status display | Vue.js | 3000 |
+| **API Gateway** | Request routing, SSE relay, CORS handling | Traefik | 8080 |
+| **Player Service** | Player profiles and lookup | ASP.NET Core (.NET 9) | 5001 |
+| **Queue Service** | Queue tickets and opponent search | ASP.NET Core (.NET 9) | 5003 |
+| **Match Service** | Match creation and result persistence | ASP.NET Core (.NET 9) | 5002 |
+| **Matchmaking Process** | Match orchestration and saga coordination | ASP.NET Core (.NET 9) | 5004 |
+| **Rating Service** | Player rating persistence and calculation | ASP.NET Core (.NET 9) | 5005 |
+| **Message Broker** | Event-driven saga coordination | RabbitMQ 3 | 5672 |
 
 ---
 
