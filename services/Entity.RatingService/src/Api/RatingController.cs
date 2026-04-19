@@ -60,7 +60,7 @@ public sealed class RatingController : ControllerBase
         }
     }
 
-    [HttpPost("{id:guid}")]
+    [HttpPut("{id:guid}")]
     [ProducesResponseType(typeof(PlayerRatingDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
@@ -123,7 +123,7 @@ public sealed class RatingController : ControllerBase
         }
     }
 
-    [HttpPost("{id:guid}/recalculate")]
+    [HttpPut("{id:guid}/recalculate")]
     [ProducesResponseType(typeof(PlayerRatingDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
