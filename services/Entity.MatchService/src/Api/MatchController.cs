@@ -102,7 +102,7 @@ public sealed class MatchController : ControllerBase
     /// then publishes MatchEndedEvent. The actual DB update is handled by MatchEndedConsumer.
     /// </summary>
     [HttpPatch("{id:guid}")]
-    [ProducesResponseType(typeof(MatchResultResponseDto), StatusCodes.Status202Accepted)]
+    [ProducesResponseType(typeof(MatchResultResponseDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status503ServiceUnavailable)]
@@ -169,7 +169,7 @@ public sealed class MatchController : ControllerBase
                 OccurredAt = DateTimeOffset.UtcNow
             }, cancellationToken);
 
-            return Accepted(new MatchResultResponseDto
+            return Ok(new MatchResultResponseDto
             {
                 MatchId = match.Id,
                 Status = match.Status

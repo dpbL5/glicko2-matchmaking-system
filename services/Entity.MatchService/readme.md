@@ -21,6 +21,7 @@ The Match Service owns match records and exposes REST endpoints for match creati
 | POST | `/matches` | Create match record |
 | GET | `/matches/{id}` | Get match by id |
 | POST | `/matches/{id}/result` | Update match status and result |
+| POST | `/matches/{id}/failed` | Mark match status as `FAILED` for compensation workflow |
 
 Compatibility routes are also exposed at `/match`, `/match/{id}`, and `/match/{id}/result` for existing callers.
 
@@ -97,3 +98,4 @@ Entity.MatchService/
 
 - The service listens on port `5002` inside the container.
 - Match records are persisted in the Match database and can be updated after results are submitted.
+- Match status can also be explicitly set to `FAILED` by process services when compensation is triggered.

@@ -27,7 +27,9 @@ builder.Services.AddScoped<IMatchRepository, MatchRepository>();
 
 builder.Services.AddMassTransit(x =>
 {
-    x.UsingRabbitMq((_, cfg) =>
+    x.AddConsumer<Entity.MatchService.Infrastructure.Messaging.MatchEndedConsumer>();
+
+    x.UsingRabbitMq((context, cfg) =>
     {
         var host = builder.Configuration["RabbitMq:Host"]
             ?? Environment.GetEnvironmentVariable("RABBITMQ_HOST")
@@ -52,6 +54,8 @@ builder.Services.AddMassTransit(x =>
             h.Username(username);
             h.Password(password);
         });
+
+        cfg.ConfigureEndpoints(context);
     });
 });
 
