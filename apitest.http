@@ -1,0 +1,77 @@
+@baseUrl = http://localhost:8080/api
+@contentType = application/json
+
+### Health - Player Service
+GET {{baseUrl}}/players/health
+
+### Health - Queue Service
+GET {{baseUrl}}/queue/health
+
+### Health - Match Service
+GET {{baseUrl}}/matches/health
+
+### Health - Rating Service
+GET {{baseUrl}}/ratings/health
+
+### Health - Matchmaking Process Service
+GET {{baseUrl}}/mm/health
+
+### List players (pick 2 ids for tests below)
+GET {{baseUrl}}/players
+
+###
+# Copy 2 player ids from the response above and set them here.
+# Example only. Replace with real ids from your current data.
+@player1 = 05c66615-8e12-4531-ac8f-98d81d64ac98
+@player2 = 0724ca73-fddd-4d1c-940b-41157711cb09
+
+### Queue - enqueue player1
+POST {{baseUrl}}/queue
+Content-Type: {{contentType}}
+
+{
+	"playerId": "{{player1}}"
+}
+
+### Queue - enqueue player2
+POST {{baseUrl}}/queue
+Content-Type: {{contentType}}
+
+{
+	"playerId": "{{player2}}"
+}
+
+### Queue - get status player1
+GET {{baseUrl}}/queue/{{player1}}
+
+### Queue - get status player2
+GET {{baseUrl}}/queue/{{player2}}
+
+### Matchmaking - initialize with playerRatings
+POST {{baseUrl}}/mm
+Content-Type: {{contentType}}
+
+{
+	"playerRatings": {
+		"{{player1}}": 1997.37,
+		"{{player2}}": 1660.48
+	}
+}
+
+###
+GET {{baseUrl}}/matches/27f6ac60-76d8-49dc-b328-995bfbb92b73
+
+### Matchmaking - invalid payload (expect 400)
+POST {{baseUrl}}/mm
+Content-Type: {{contentType}}
+
+{
+	"playerRatings": {}
+}
+
+### Queue - dequeue player1 (cleanup)
+DELETE {{baseUrl}}/queue/{{player1}}
+
+### Queue - dequeue player2 (cleanup)
+DELETE {{baseUrl}}/queue/{{player2}}
+
