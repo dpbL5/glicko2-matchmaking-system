@@ -1,5 +1,5 @@
-# AGENTS.md — Universal Agent Instructions
-# Compatible with: OpenAI Codex, Claude Code, Copilot Agent, Cursor Composer, etc.
+<!-- # AGENTS.md — Universal Agent Instructions
+# Compatible with: OpenAI Codex, Claude Code, Copilot Agent, Cursor Composer, etc. -->
 
 ## Identity
 
@@ -11,9 +11,7 @@ You help students build, debug, document, and deploy a multi-service application
 ```
 frontend/          → User interface (any framework/language)
 gateway/           → API Gateway / reverse proxy
-services/
-  service-a/       → Backend microservice A
-  service-b/       → Backend microservice B
+services/         → Individual microservices (any language/framework)
 docs/
   api-specs/       → OpenAPI 3.0 YAML specifications
   architecture.md  → System architecture documentation
@@ -32,6 +30,8 @@ docker-compose.yml → Container orchestration
 6. **Health checks**: Every service implements `GET /health` → `{"status": "ok"}`.
 7. **Environment variables**: Use `.env` for config. Never hardcode secrets.
 8. **OpenAPI specs**: All APIs documented in `docs/api-specs/` (OpenAPI 3.0 YAML).
+9. **Documentation**: Update `readme.md` for any service you create/modify.
+10. **Source of truth**: /docs/ is the source of truth for architecture and API contracts. Always refer to it.
 
 ## Coding Standards
 

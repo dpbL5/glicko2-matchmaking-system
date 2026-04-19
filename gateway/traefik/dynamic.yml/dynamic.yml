@@ -8,6 +8,51 @@ http:
       middlewares:
         - health-no-cache
 
+    player-health-router:
+      entryPoints:
+        - web
+      rule: Path(`/api/player/health`) || Path(`/api/players/health`)
+      service: player-service
+      middlewares:
+        - health-no-cache
+        - set-health-path
+
+    queue-health-router:
+      entryPoints:
+        - web
+      rule: Path(`/api/queue/health`)
+      service: queue-service
+      middlewares:
+        - health-no-cache
+        - set-health-path
+
+    match-health-router:
+      entryPoints:
+        - web
+      rule: Path(`/api/match/health`) || Path(`/api/matches/health`)
+      service: match-service
+      middlewares:
+        - health-no-cache
+        - set-health-path
+
+    rating-health-router:
+      entryPoints:
+        - web
+      rule: Path(`/api/rating/health`) || Path(`/api/ratings/health`)
+      service: rating-service
+      middlewares:
+        - health-no-cache
+        - set-health-path
+
+    matchmaking-health-router:
+      entryPoints:
+        - web
+      rule: Path(`/api/mm/health`)
+      service: matchmaking-process-service
+      middlewares:
+        - health-no-cache
+        - set-health-path
+
     player-router:
       entryPoints:
         - web
@@ -54,6 +99,10 @@ http:
       headers:
         customResponseHeaders:
           Cache-Control: no-cache
+
+    set-health-path:
+      replacePath:
+        path: /health
 
     player-path:
       chain:

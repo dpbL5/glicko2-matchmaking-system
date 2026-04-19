@@ -7,7 +7,7 @@ services:
   frontend:
     build: ./frontend
     ports:
-      - "${FRONTEND_PORT:-3000}:3000"
+      - "3000:80"
     depends_on:
       - gateway
     networks:
