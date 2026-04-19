@@ -1,59 +1,79 @@
 openapi: 3.0.3
 info:
   title: Rating Service API
-  description: |
-    API specification for the rating service.
   version: 1.0.0
-
+  description: API contract for rating lookup, update, and recalculation.
 servers:
+  - url: http://rating-service:5005
+    description: Internal Docker network
   - url: http://localhost:5005
-    description: Local development
-
+    description: Direct local access
 paths:
   /health:
     get:
       summary: Health check
-      operationId: healthCheck
+      tags:
+        - Health
       responses:
         '200':
           description: Service is healthy
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  status:
-                    type: string
-                    example: ok
-
-  /rating/{id}:
+                $ref: '#/components/schemas/HealthResponse'
+  /ratings/{id}:
     get:
-      summary: Get player rating
-      operationId: getPlayerRating
+      summary: Get player rating by id
+      tags:
+        - Ratings
       parameters:
         - name: id
           in: path
           required: true
+          description: Player identifier (UUID)
           schema:
             type: string
             format: uuid
       responses:
         '200':
-          description: Rating record
+          description: Rating found
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/PlayerRating'
+        '400':
+          description: Invalid request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ValidationProblemDetails'
         '404':
           description: Rating not found
-
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '500':
+          description: Unexpected server error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '503':
+          description: Database unavailable
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
     post:
-      summary: Update player rating
-      operationId: updatePlayerRating
+      summary: Update player rating by id
+      tags:
+        - Ratings
       parameters:
         - name: id
           in: path
           required: true
+          description: Player identifier (UUID)
           schema:
             type: string
             format: uuid
@@ -65,37 +85,182 @@ paths:
               $ref: '#/components/schemas/RatingUpdateRequest'
       responses:
         '200':
-          description: Rating updated
+          description: Updated rating
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/PlayerRating'
+        '400':
+          description: Invalid request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ValidationProblemDetails'
         '404':
           description: Rating not found
-
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '500':
+          description: Unexpected server error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '503':
+          description: Database unavailable
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /ratings/{id}/recalculate:
+    post:
+      summary: Recalculate player rating after match result
+      tags:
+        - Ratings
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Player identifier (UUID)
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RatingRecalculateRequest'
+      responses:
+        '200':
+          description: Recalculated and updated rating
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlayerRating'
+        '400':
+          description: Invalid request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ValidationProblemDetails'
+        '404':
+          description: Rating not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '500':
+          description: Unexpected server error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '503':
+          description: Database unavailable
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
 components:
   schemas:
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: ok
+      required:
+        - status
     PlayerRating:
       type: object
       properties:
         playerId:
           type: string
+          format: uuid
+          example: 00000000-0000-0000-0000-000000000001
         rating:
           type: number
+          format: double
+          example: 1500
         rd:
           type: number
+          format: double
+          example: 350
         volatility:
           type: number
+          format: double
+          example: 0.06
+      required:
+        - playerId
+        - rating
+        - rd
+        - volatility
     RatingUpdateRequest:
       type: object
+      properties:
+        rating:
+          type: number
+          format: double
+          minimum: 0
+        rd:
+          type: number
+          format: double
+          minimum: 0
+        volatility:
+          type: number
+          format: double
+          minimum: 0
       required:
         - rating
         - rd
         - volatility
+    RatingRecalculateRequest:
+      type: object
       properties:
-        rating:
-          type: number
-        rd:
-          type: number
-        volatility:
-          type: number
+        matchResult:
+          type: string
+          enum:
+            - win
+            - draw
+            - loss
+        opponentRatings:
+          type: array
+          items:
+            type: number
+            format: double
+            minimum: 0
+      required:
+        - matchResult
+    ProblemDetails:
+      type: object
+      properties:
+        type:
+          type: string
+          nullable: true
+        title:
+          type: string
+          nullable: true
+        status:
+          type: integer
+          format: int32
+          nullable: true
+        detail:
+          type: string
+          nullable: true
+        instance:
+          type: string
+          nullable: true
+    ValidationProblemDetails:
+      allOf:
+        - $ref: '#/components/schemas/ProblemDetails'
+        - type: object
+          properties:
+            errors:
+              type: object
+              additionalProperties:
+                type: array
+                items:
+                  type: string

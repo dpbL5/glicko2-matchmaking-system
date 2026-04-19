@@ -1,88 +1,146 @@
 openapi: 3.0.3
 info:
-	title: Player Service API
-	description: |
-		API specification for player profile and status management.
-	version: 1.0.0
-
+  title: Player Service API
+  version: 1.0.0
+  description: API contract for player profile lookup service.
 servers:
-	- url: http://localhost:5001
-		description: Local development
-
+  - url: http://player-service:5001
+    description: Internal Docker network
+  - url: http://localhost:5001
+    description: Direct local access
 paths:
-	/health:
-		get:
-			summary: Health check
-			operationId: healthCheck
-			responses:
-				'200':
-					description: Service is healthy
-					content:
-						application/json:
-							schema:
-								type: object
-								properties:
-									status:
-										type: string
-										example: ok
-
-	/player:
-		get:
-			summary: Get player profiles
-			operationId: getPlayers
-			responses:
-				'200':
-					description: Player list
-					content:
-						application/json:
-							schema:
-								type: array
-								items:
-									$ref: '#/components/schemas/Player'
-
-	/player/{id}:
-		get:
-			summary: Get player by id
-			operationId: getPlayerById
-			parameters:
-				- name: id
-					in: path
-					required: true
-					schema:
-						type: string
-						format: uuid
-			responses:
-				'200':
-					description: Player record
-					content:
-						application/json:
-							schema:
-								$ref: '#/components/schemas/Player'
-				'400':
-					description: Invalid player id
-				'404':
-					description: Player not found
-
+  /health:
+    get:
+      summary: Health check
+      tags:
+        - Health
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+  /players:
+    get:
+      summary: List players
+      tags:
+        - Players
+      responses:
+        '200':
+          description: Player list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Player'
+        '500':
+          description: Unexpected server error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '503':
+          description: Database unavailable
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /players/{id}:
+    get:
+      summary: Get player by id
+      tags:
+        - Players
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Player identifier (UUID)
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Player found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Player'
+        '400':
+          description: Invalid player id
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ValidationProblemDetails'
+        '404':
+          description: Player not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '500':
+          description: Unexpected server error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '503':
+          description: Database unavailable
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
 components:
-	schemas:
-		Player:
-			type: object
-			required:
-				- id
-				- name
-			properties:
-				id:
-					type: string
-					format: uuid
-				name:
-					type: string
-		ErrorResponse:
-			type: object
-			required:
-				- title
-				- status
-			properties:
-				title:
-					type: string
-				status:
-					type: integer
+  schemas:
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: ok
+      required:
+        - status
+    Player:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: 00000000-0000-0000-0000-000000000001
+        name:
+          type: string
+          example: Player 001
+      required:
+        - id
+        - name
+    ProblemDetails:
+      type: object
+      properties:
+        type:
+          type: string
+          nullable: true
+        title:
+          type: string
+          nullable: true
+        status:
+          type: integer
+          format: int32
+          nullable: true
+        detail:
+          type: string
+          nullable: true
+        instance:
+          type: string
+          nullable: true
+    ValidationProblemDetails:
+      allOf:
+        - $ref: '#/components/schemas/ProblemDetails'
+        - type: object
+          properties:
+            errors:
+              type: object
+              additionalProperties:
+                type: array
+                items:
+                  type: string

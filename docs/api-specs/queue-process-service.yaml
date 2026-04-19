@@ -1,35 +1,31 @@
 openapi: 3.0.3
 info:
   title: Queue Process Service API
-  description: |
-    API specification for queue enrollment, search, and dequeue operations.
   version: 1.0.0
-
+  description: API contract for queue ticket lifecycle and status streaming.
 servers:
+  - url: http://queue-service:5003
+    description: Internal Docker network
   - url: http://localhost:5003
-    description: Local development
-
+    description: Direct local access
 paths:
   /health:
     get:
       summary: Health check
-      operationId: healthCheck
+      tags:
+        - Health
       responses:
         '200':
           description: Service is healthy
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  status:
-                    type: string
-                    example: ok
-
+                $ref: '#/components/schemas/HealthResponse'
   /queue:
     post:
-      summary: Enqueue player to pool
-      operationId: enqueuePlayer
+      summary: Enqueue player
+      tags:
+        - Queue
       requestBody:
         required: true
         content:
@@ -38,80 +34,141 @@ paths:
               $ref: '#/components/schemas/QueueEnqueueRequest'
       responses:
         '201':
-          description: Player queued
+          description: Queue ticket created or updated
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/QueueTicket'
-
+        '400':
+          description: Invalid request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ValidationProblemDetails'
+        '404':
+          description: Player or rating not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '503':
+          description: Upstream service unavailable
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
   /queue/{playerId}:
     get:
       summary: Get queue status by player id
-      operationId: getQueueStatus
+      tags:
+        - Queue
       parameters:
         - name: playerId
           in: path
           required: true
+          description: Player identifier (UUID)
           schema:
             type: string
             format: uuid
       responses:
         '200':
-          description: Queue ticket
+          description: Queue ticket found
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/QueueTicket'
+        '400':
+          description: Invalid player id
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ValidationProblemDetails'
         '404':
           description: Queue ticket not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
     delete:
-      summary: Dequeue player from pool
-      operationId: dequeuePlayer
+      summary: Dequeue player
+      tags:
+        - Queue
       parameters:
         - name: playerId
           in: path
           required: true
+          description: Player identifier (UUID)
           schema:
             type: string
             format: uuid
       responses:
         '204':
-          description: Removed from queue
+          description: Queue ticket removed
+        '400':
+          description: Invalid player id
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ValidationProblemDetails'
         '404':
           description: Queue ticket not found
-
-  /queue/search:
-    post:
-      summary: Find opponents in SR range
-      operationId: searchOpponents
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/QueueSearchRequest'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /queue/{playerId}/stream:
+    get:
+      summary: Stream queue status updates via SSE
+      tags:
+        - Queue
+      parameters:
+        - name: playerId
+          in: path
+          required: true
+          description: Player identifier (UUID)
+          schema:
+            type: string
+            format: uuid
       responses:
         '200':
-          description: Matching players
+          description: Event stream established
           content:
-            application/json:
+            text/event-stream:
               schema:
-                $ref: '#/components/schemas/QueueSearchResponse'
-
+                type: string
+                example: |
+                  event: queue-status
+                  data: {"playerId":"00000000-0000-0000-0000-000000000001","sr":1500,"status":"WAITING","queuedAt":"2026-01-01T00:00:00Z","matchedAt":null}
+        '400':
+          description: Invalid player id
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ValidationProblemDetails'
+        '404':
+          description: Queue ticket not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
 components:
   schemas:
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: ok
+      required:
+        - status
     QueueEnqueueRequest:
       type: object
-      required:
-        - playerId
-        - sr
       properties:
         playerId:
           type: string
           format: uuid
-        sr:
-          type: number
-          minimum: 0.01
+      required:
+        - playerId
     QueueTicket:
       type: object
       properties:
@@ -120,36 +177,52 @@ components:
           format: uuid
         sr:
           type: number
+          format: decimal
         status:
           type: string
-          enum: [WAITING, MATCHED, REMOVED]
+          enum:
+            - WAITING
+            - MATCHED
+            - REMOVED
         queuedAt:
           type: string
           format: date-time
-    QueueSearchRequest:
-      type: object
+        matchedAt:
+          type: string
+          format: date-time
+          nullable: true
       required:
         - playerId
-      properties:
-        playerId:
-          type: string
-          format: uuid
-        minPlayers:
-          type: integer
-          minimum: 2
-        maxSrDelta:
-          type: number
-          minimum: 0.01
-    QueueSearchResponse:
+        - sr
+        - status
+        - queuedAt
+    ProblemDetails:
       type: object
-      required:
-        - matched
-        - playerIds
       properties:
-        matched:
-          type: boolean
-        playerIds:
-          type: array
-          items:
-            type: string
-            format: uuid
+        type:
+          type: string
+          nullable: true
+        title:
+          type: string
+          nullable: true
+        status:
+          type: integer
+          format: int32
+          nullable: true
+        detail:
+          type: string
+          nullable: true
+        instance:
+          type: string
+          nullable: true
+    ValidationProblemDetails:
+      allOf:
+        - $ref: '#/components/schemas/ProblemDetails'
+        - type: object
+          properties:
+            errors:
+              type: object
+              additionalProperties:
+                type: array
+                items:
+                  type: string

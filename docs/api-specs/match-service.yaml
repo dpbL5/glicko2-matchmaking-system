@@ -1,35 +1,31 @@
 openapi: 3.0.3
 info:
   title: Match Service API
-  description: |
-    API specification for match record creation and result updates.
   version: 1.0.0
-
+  description: API contract for match creation, lookup, and result updates.
 servers:
+  - url: http://match-service:5002
+    description: Internal Docker network
   - url: http://localhost:5002
-    description: Local development
-
+    description: Direct local access
 paths:
   /health:
     get:
       summary: Health check
-      operationId: healthCheck
+      tags:
+        - Health
       responses:
         '200':
           description: Service is healthy
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  status:
-                    type: string
-                    example: ok
-
-  /match:
+                $ref: '#/components/schemas/HealthResponse'
+  /matches:
     post:
       summary: Create match record
-      operationId: createMatch
+      tags:
+        - Matches
       requestBody:
         required: true
         content:
@@ -43,36 +39,77 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Match'
-
-  /match/{id}:
+        '400':
+          description: Invalid request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ValidationProblemDetails'
+        '500':
+          description: Unexpected server error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '503':
+          description: Database unavailable
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /matches/{id}:
     get:
       summary: Get match by id
-      operationId: getMatchById
+      tags:
+        - Matches
       parameters:
         - name: id
           in: path
           required: true
+          description: Match identifier (UUID)
           schema:
             type: string
             format: uuid
       responses:
         '200':
-          description: Match record
+          description: Match found
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Match'
+        '400':
+          description: Invalid request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ValidationProblemDetails'
         '404':
           description: Match not found
-
-  /match/{id}/result:
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '500':
+          description: Unexpected server error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '503':
+          description: Database unavailable
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
     post:
-      summary: Update match status and result
-      operationId: submitMatchResult
+      summary: Submit match result
+      tags:
+        - Matches
       parameters:
         - name: id
           in: path
           required: true
+          description: Match identifier (UUID)
           schema:
             type: string
             format: uuid
@@ -89,13 +126,92 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/MatchResultResponse'
-
+        '400':
+          description: Invalid request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ValidationProblemDetails'
+        '404':
+          description: Match not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '500':
+          description: Unexpected server error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '503':
+          description: Database unavailable
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /matches/{id}/result:
+    post:
+      summary: Submit match result (explicit result route)
+      tags:
+        - Matches
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Match identifier (UUID)
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MatchResultRequest'
+      responses:
+        '200':
+          description: Match result accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MatchResultResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ValidationProblemDetails'
+        '404':
+          description: Match not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '500':
+          description: Unexpected server error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '503':
+          description: Database unavailable
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
 components:
   schemas:
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: ok
+      required:
+        - status
     MatchCreateRequest:
       type: object
-      required:
-        - playerIds
       properties:
         playerIds:
           type: array
@@ -106,42 +222,84 @@ components:
             format: uuid
         queueId:
           type: string
+          maxLength: 64
+      required:
+        - playerIds
     Match:
       type: object
-      required:
-        - id
-        - status
-        - playerIds
       properties:
         id:
           type: string
           format: uuid
         status:
           type: string
-          enum: [PENDING, IN_PROGRESS, FINISHED]
+          enum:
+            - PENDING
+            - IN_PROGRESS
+            - FINISHED
         playerIds:
           type: array
           items:
             type: string
             format: uuid
+      required:
+        - id
+        - status
+        - playerIds
     MatchResultRequest:
       type: object
-      required:
-        - winner
-        - result
       properties:
         winner:
           type: string
+          maxLength: 255
         result:
           type: string
+          maxLength: 255
+      required:
+        - winner
+        - result
     MatchResultResponse:
       type: object
-      required:
-        - matchId
-        - status
       properties:
         matchId:
           type: string
           format: uuid
         status:
           type: string
+          enum:
+            - PENDING
+            - IN_PROGRESS
+            - FINISHED
+      required:
+        - matchId
+        - status
+    ProblemDetails:
+      type: object
+      properties:
+        type:
+          type: string
+          nullable: true
+        title:
+          type: string
+          nullable: true
+        status:
+          type: integer
+          format: int32
+          nullable: true
+        detail:
+          type: string
+          nullable: true
+        instance:
+          type: string
+          nullable: true
+    ValidationProblemDetails:
+      allOf:
+        - $ref: '#/components/schemas/ProblemDetails'
+        - type: object
+          properties:
+            errors:
+              type: object
+              additionalProperties:
+                type: array
+                items:
+                  type: string
