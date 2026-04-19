@@ -1,7 +1,5 @@
-using MatchmakingProcessService.Application;
 using MatchmakingProcessService.Infrastructure.Messaging;
 using MassTransit;
-using MatchmakingProcessService.Infrastructure;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
 
@@ -61,8 +59,6 @@ builder.Services.AddMassTransit(x =>
         cfg.ConfigureEndpoints(context);
     });
 });
-
-builder.Services.AddScoped<IMatchmakingOrchestrator, MatchmakingOrchestrator>();
 
 var app = builder.Build();
 

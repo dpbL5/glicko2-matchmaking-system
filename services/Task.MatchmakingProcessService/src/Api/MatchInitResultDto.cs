@@ -9,6 +9,4 @@ public sealed class MatchInitResultDto
     public IReadOnlyList<Guid> PlayerIds { get; init; } = [];
 
     public IReadOnlyList<Guid> DequeuedPlayerIds { get; init; } = [];
-
-    public IReadOnlyList<Guid> FailedToDequeuePlayerIds { get; init; } = [];
 }

@@ -14,10 +14,24 @@ public sealed class RatingUpdatedConsumer : IConsumer<RatingUpdatedEvent>
 
     public Task Consume(ConsumeContext<RatingUpdatedEvent> context)
     {
+        var message = context.Message;
+
         logger.LogInformation(
-            "Received RatingUpdated event for match {MatchId} at {OccurredAt}",
-            context.Message.MatchId,
-            context.Message.OccurredAt);
+            "Received RatingUpdated event for match {MatchId} at {OccurredAt}. {Count} ratings updated.",
+            message.MatchId,
+            message.OccurredAt,
+            message.UpdatedRatings.Count);
+
+        foreach (var update in message.UpdatedRatings)
+        {
+            logger.LogInformation(
+                "  Player {PlayerId}: {OldRating} → {NewRating} (RD: {NewRd}, Vol: {NewVol})",
+                update.PlayerId,
+                update.OldRating,
+                update.NewRating,
+                update.NewRd,
+                update.NewVolatility);
+        }
 
         return Task.CompletedTask;
     }
