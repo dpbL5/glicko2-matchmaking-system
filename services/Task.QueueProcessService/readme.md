@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Queue Process Service owns the waiting queue lifecycle, validates players before queueing, snapshots SR from the Rating Service, and finds matched candidates inside the configured SR range.
+The Queue Process Service owns the waiting queue lifecycle, validates players before queueing, snapshots SR from the Rating Service, consumes MatchReady events from RabbitMQ, and finds matched candidates inside the configured SR range.
 
 ## Tech Stack
 
@@ -34,6 +34,10 @@ The Queue Process Service owns the waiting queue lifecycle, validates players be
 | `DB_PASSWORD` | Queue database password | `queuepass` |
 | `PLAYER_SERVICE_BASE_URL` | Internal Player Service base URL | `http://player-service:5001` |
 | `RATING_SERVICE_BASE_URL` | Internal Rating Service base URL | `http://rating-service:5005` |
+| `RABBITMQ_HOST` | RabbitMQ host | `rabbitmq` |
+| `RABBITMQ_PORT` | RabbitMQ port | `5672` |
+| `RABBITMQ_USER` | RabbitMQ username | `guest` |
+| `RABBITMQ_PASSWORD` | RabbitMQ password | `guest` |
 
 Docker Compose maps these from `.env` queue-specific values (`QUEUE_DB_*`) into `DB_*` for this service.
 
@@ -74,4 +78,5 @@ Task.QueueProcessService/
 
 - The service uses environment variables bound into configuration and never hardcodes connection details.
 - Queue entries are persisted with an authoritative SR snapshot fetched from the Rating Service.
-- Frontend clients should detect queue lifecycle from SSE `queue-signal` events (`QUEUED`, `MATCH_FOUND`, `DEQUEUED`). `MATCH_FOUND` now includes `matchId` and `playerIds` in camelCase.
+- Queue service consumes `MatchReadyEvent` from RabbitMQ and only emits `MATCH_FOUND` after broker confirmation is observed.
+- Frontend clients should detect queue lifecycle from SSE `queue-signal` events (`QUEUED`, `MATCH_FOUND`, `DEQUEUED`) and transition into the match flow when `MATCH_FOUND` is received.

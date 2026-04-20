@@ -577,9 +577,10 @@ onUnmounted(() => {
               <div>6. MatchmakingProcess → MatchService: POST /matches</div>
               <div>7. MatchmakingProcess → Queue: DELETE /queue</div>
               <div>8. MatchmakingProcess → Broker: MatchReady</div>
-              <div style="color:var(--warning);">9. GameServer → PATCH /matches/{id} (result)</div>
-              <div style="color:var(--success);">10. Broker → RatingService: Glicko-2 recalculate</div>
-              <div style="color:var(--success);">11. Broker → MatchService: update match status</div>
+              <div style="color:var(--warning);">9. Client receives MATCH_FOUND via SSE</div>
+              <div style="color:var(--warning);">10. GameServer → PATCH /matches/{id} (result)</div>
+              <div style="color:var(--success);">11. Broker → RatingService: Glicko-2 recalculate</div>
+              <div style="color:var(--success);">12. Broker → MatchService: update match status</div>
             </div>
           </div>
         </div>

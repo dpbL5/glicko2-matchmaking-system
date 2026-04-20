@@ -69,12 +69,18 @@ services:
       PLAYER_SERVICE_BASE_URL: ${PLAYER_SERVICE_BASE_URL:-http://player-service:5001}
       RATING_SERVICE_BASE_URL: ${RATING_SERVICE_BASE_URL:-http://rating-service:5005}
       MATCHMAKING_PROCESS_SERVICE_BASE_URL: ${MATCHMAKING_PROCESS_SERVICE_BASE_URL:-http://matchmaking-process-service:5004}
+      RABBITMQ_HOST: ${RABBITMQ_HOST:-rabbitmq}
+      RABBITMQ_PORT: ${RABBITMQ_PORT:-5672}
+      RABBITMQ_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-guest}
     depends_on:
       queue-db:
         condition: service_healthy
       player-service:
         condition: service_started
       rating-service:
+        condition: service_started
+      rabbitmq:
         condition: service_started
     networks:
       - app-network

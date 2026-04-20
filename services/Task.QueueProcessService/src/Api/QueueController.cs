@@ -15,11 +15,13 @@ public sealed class QueueController : ControllerBase
 
     private readonly IQueueRepository repository;
     private readonly IQueueUpstreamClient upstreamClient;
+    private readonly IMatchReadyTracker matchReadyTracker;
 
-    public QueueController(IQueueRepository repository, IQueueUpstreamClient upstreamClient)
+    public QueueController(IQueueRepository repository, IQueueUpstreamClient upstreamClient, IMatchReadyTracker matchReadyTracker)
     {
         this.repository = repository;
         this.upstreamClient = upstreamClient;
+        this.matchReadyTracker = matchReadyTracker;
     }
 
     [HttpPost]
@@ -139,16 +141,40 @@ public sealed class QueueController : ControllerBase
         await Response.Body.FlushAsync(cancellationToken);
 
         QueueTicket? lastKnownTicket = null;
+        Guid? pendingMatchId = null;
 
         while (!cancellationToken.IsCancellationRequested)
         {
             await Task.Delay(StreamPollIntervalMs, cancellationToken);
+
+            // MatchReady can arrive after this player has already been removed from queue.
+            // Always check it first so the stream can still emit MATCH_FOUND.
+            if (TryTakeReadyConfirmation(playerId, pendingMatchId, out var readyEvent))
+            {
+                foreach (var matchedPlayerId in readyEvent.PlayerIds)
+                {
+                    await repository.MarkMatchedAsync(matchedPlayerId, cancellationToken);
+                }
+
+                await WriteSignalEventAsync(
+                    playerId,
+                    "MATCH_FOUND",
+                    readyEvent.MatchId,
+                    readyEvent.PlayerIds,
+                    cancellationToken);
+                break;
+            }
 
             var current = await repository.GetByPlayerIdAsync(playerId, cancellationToken);
             if (current is null)
             {
                 if (lastKnownTicket is not null)
                 {
+                    if (pendingMatchId is not null)
+                    {
+                        continue;
+                    }
+
                     await WriteSignalEventAsync(playerId, "DEQUEUED", null, null, cancellationToken);
                     break;
                 }
@@ -162,6 +188,11 @@ public sealed class QueueController : ControllerBase
             {
                 await WriteQueuedEventAsync(current, cancellationToken);
                 lastKnownTicket = current;
+            }
+
+            if (pendingMatchId is not null)
+            {
+                continue;
             }
 
             var opponent = (await repository.GetQueuedPlayersAsync(cancellationToken))
@@ -182,15 +213,7 @@ public sealed class QueueController : ControllerBase
 
                 if (initialized is not null)
                 {
-                    await repository.MarkMatchedAsync(playerId, cancellationToken);
-                    await repository.MarkMatchedAsync(opponent.PlayerId, cancellationToken);
-                    await WriteSignalEventAsync(
-                        playerId,
-                        "MATCH_FOUND",
-                        initialized.MatchId,
-                        initialized.PlayerIds,
-                        cancellationToken);
-                    break;
+                    pendingMatchId = initialized.MatchId;
                 }
             }
         }
@@ -221,7 +244,6 @@ public sealed class QueueController : ControllerBase
 
         return NoContent();
     }
-
 
     private static QueueTicketDto ToDto(QueueTicket ticket)
     {
@@ -287,5 +309,10 @@ public sealed class QueueController : ControllerBase
         }
 
         return errors;
+    }
+
+    private bool TryTakeReadyConfirmation(Guid playerId, Guid? pendingMatchId, out MatchReadyConfirmation confirmation)
+    {
+        return matchReadyTracker.TryTake(playerId, pendingMatchId, out confirmation);
     }
 }

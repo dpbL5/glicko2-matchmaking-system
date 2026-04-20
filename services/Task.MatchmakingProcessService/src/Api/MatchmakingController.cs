@@ -36,9 +36,6 @@ public sealed class MatchmakingController : ControllerBase
         {
             var createdMatch = await CreateMatchAsync(playerIds, cancellationToken);
 
-            await DequeueMatchedPlayersAsync(playerIds, cancellationToken);
-            var dequeuedPlayerIds = playerIds;
-
             await PublishMatchReadyAsync(createdMatch.Id, playerIds, cancellationToken);
 
             return Accepted(new MatchInitResultDto
@@ -46,7 +43,7 @@ public sealed class MatchmakingController : ControllerBase
                 MatchId = createdMatch.Id,
                 Status = createdMatch.Status,
                 PlayerIds = playerIds,
-                DequeuedPlayerIds = dequeuedPlayerIds
+                DequeuedPlayerIds = []
             });
         }
         catch (HttpRequestException exception)
@@ -89,16 +86,6 @@ public sealed class MatchmakingController : ControllerBase
         }
 
         return payload;
-    }
-
-    private async Task DequeueMatchedPlayersAsync(IReadOnlyList<Guid> playerIds, CancellationToken cancellationToken)
-    {
-        var client = httpClientFactory.CreateClient("QueueService");
-
-        foreach (var playerId in playerIds)
-        {
-            using var _ = await client.DeleteAsync($"/queue/{playerId}", cancellationToken);
-        }
     }
 
     private async Task PublishMatchReadyAsync(Guid matchId, IReadOnlyList<Guid> playerIds, CancellationToken cancellationToken)
