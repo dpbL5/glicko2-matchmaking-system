@@ -225,9 +225,9 @@ sequenceDiagram
     Broker-->>MatchmakingProcessService: MatchUpdated
    
     Client->>Gateway: GET /matches/{matchId}
-    Gateway->>MatchmakingProcessService: Open SSE stream
+    Gateway->>MatchService: Open SSE stream
     loop wait for result
-        MatchmakingProcessService-->>Gateway: SSE stream established
+        MatchService-->>Gateway: SSE stream established
         Gateway-->>Client: Match result
     end
 ```
