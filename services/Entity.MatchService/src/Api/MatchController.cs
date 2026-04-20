@@ -74,22 +74,22 @@ public sealed class MatchController : ControllerBase
 
         try
         {
+            var match = await repository.GetByIdAsync(id, cancellationToken);
+            if (match is not null)
+            {
+                return Ok(ToDto(match));
+            }
+
             if (WantsSse(Request))
             {
                 return await StreamMatchByIdAsync(id, cancellationToken);
             }
 
-            var match = await repository.GetByIdAsync(id, cancellationToken);
-            if (match is null)
+            return NotFound(new ProblemDetails
             {
-                return NotFound(new ProblemDetails
-                {
-                    Title = "Match not found.",
-                    Status = StatusCodes.Status404NotFound
-                });
-            }
-
-            return Ok(ToDto(match));
+                Title = "Match not found.",
+                Status = StatusCodes.Status404NotFound
+            });
         }
         catch (DbUpdateException ex)
         {
