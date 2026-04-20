@@ -59,6 +59,25 @@ export async function fetchMatch(matchId) {
   return res.json()
 }
 
+export function subscribeMatchByIdStream(matchId, onEvent, onError) {
+  const es = new EventSource(`${BASE}/matches/${matchId}`)
+
+  es.addEventListener('stream-open', (e) => {
+    onEvent({ type: 'stream-open', data: JSON.parse(e.data) })
+  })
+
+  es.addEventListener('match-found', (e) => {
+    onEvent({ type: 'match-found', data: JSON.parse(e.data) })
+  })
+
+  es.onerror = (e) => {
+    onError?.(e)
+    es.close()
+  }
+
+  return es
+}
+
 export async function submitMatchResult(matchId, winner, result) {
   const res = await fetch(`${BASE}/matches/${matchId}`, {
     method: 'PATCH',

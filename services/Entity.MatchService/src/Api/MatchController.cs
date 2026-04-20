@@ -12,6 +12,8 @@ namespace Entity.MatchService.Api;
 [Route("matches")]
 public sealed class MatchController : ControllerBase
 {
+    private const int MatchLookupPollIntervalMs = 1000;
+
     private readonly IMatchRepository repository;
     private readonly IPublishEndpoint publishEndpoint;
 
@@ -72,6 +74,11 @@ public sealed class MatchController : ControllerBase
 
         try
         {
+            if (WantsSse(Request))
+            {
+                return await StreamMatchByIdAsync(id, cancellationToken);
+            }
+
             var match = await repository.GetByIdAsync(id, cancellationToken);
             if (match is null)
             {
@@ -93,6 +100,34 @@ public sealed class MatchController : ControllerBase
                 Status = StatusCodes.Status503ServiceUnavailable
             });
         }
+    }
+
+    private async Task<IActionResult> StreamMatchByIdAsync(Guid id, CancellationToken cancellationToken)
+    {
+        Response.StatusCode = StatusCodes.Status200OK;
+        Response.ContentType = "text/event-stream";
+        Response.Headers.CacheControl = "no-cache";
+        Response.Headers.Append("X-Accel-Buffering", "no");
+
+        await Response.WriteAsync("event: stream-open\n", cancellationToken);
+        await Response.WriteAsync($"data: {{\"matchId\":\"{id}\",\"connected\":true}}\n\n", cancellationToken);
+        await Response.Body.FlushAsync(cancellationToken);
+
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            var match = await repository.GetByIdAsync(id, cancellationToken);
+            if (match is not null)
+            {
+                await Response.WriteAsync("event: match-found\n", cancellationToken);
+                await Response.WriteAsync($"data: {JsonSerializer.Serialize(ToDto(match))}\n\n", cancellationToken);
+                await Response.Body.FlushAsync(cancellationToken);
+                break;
+            }
+
+            await Task.Delay(MatchLookupPollIntervalMs, cancellationToken);
+        }
+
+        return new EmptyResult();
     }
 
     /// <summary>
@@ -199,6 +234,18 @@ public sealed class MatchController : ControllerBase
     private static List<Guid> DeserializePlayerIds(string playerIdsJson)
     {
         return JsonSerializer.Deserialize<List<Guid>>(playerIdsJson) ?? [];
+    }
+
+    private static bool WantsSse(HttpRequest request)
+    {
+        if (!request.Headers.TryGetValue("Accept", out var acceptValues))
+        {
+            return false;
+        }
+
+        return acceptValues.Any(value =>
+            !string.IsNullOrWhiteSpace(value)
+            && value.Contains("text/event-stream", StringComparison.OrdinalIgnoreCase));
     }
 
     private static Dictionary<string, string[]> ValidateCreateRequest(MatchCreateRequestDto? request)

@@ -7,6 +7,7 @@ import {
   subscribeQueueStream,
   dequeuePlayer,
   fetchMatch,
+  subscribeMatchByIdStream,
   submitMatchResult,
   fetchQueuedPlayers,
 } from './api.js'
@@ -22,6 +23,7 @@ const queuedPlayerIds = ref([])
 const selectedPlayerId = ref(null)
 const flowState = ref('idle')
 const currentStream = ref(null)
+const currentMatchStream = ref(null)
 const currentMatchId = ref(null)
 const currentMatch = ref(null)
 const matchPlayers = ref([])
@@ -193,7 +195,31 @@ async function loadMatchDetails(matchId) {
       currentMatch.value = match
       addLog('RES', `200 OK — status: ${match.status}, players: ${match.playerIds?.length ?? '?'}`, 'response')
       flowState.value = 'playing'
+      return
     }
+
+    addLog('REQ', `GET /matches/${shortId(matchId)} (SSE wait)`, 'request')
+    currentMatchStream.value = subscribeMatchByIdStream(
+      matchId,
+      (ev) => {
+        if (ev.type === 'stream-open') {
+          addLog('SSE', `Waiting match record for ${shortId(matchId)}...`, 'event')
+          return
+        }
+
+        if (ev.type === 'match-found' && ev.data) {
+          currentMatch.value = ev.data
+          addLog('RES', `SSE match-found — status: ${ev.data.status}`, 'response')
+          flowState.value = 'playing'
+          currentMatchStream.value?.close()
+          currentMatchStream.value = null
+        }
+      },
+      () => {
+        addLog('ERR', 'Match SSE closed/error while waiting match details', 'error')
+        currentMatchStream.value = null
+      }
+    )
   } catch (e) {
     addLog('ERR', e.message, 'error')
   }
@@ -219,6 +245,10 @@ async function enqueueSecondPlayer() {
 // ─── Cancel Queue ────────────────────────────────────
 async function cancelQueue() {
   stopQueuePolling()
+  if (currentMatchStream.value) {
+    currentMatchStream.value.close()
+    currentMatchStream.value = null
+  }
   if (currentStream.value) {
     currentStream.value.close()
     currentStream.value = null
@@ -304,6 +334,10 @@ function resetFlow() {
     currentStream.value.close()
     currentStream.value = null
   }
+  if (currentMatchStream.value) {
+    currentMatchStream.value.close()
+    currentMatchStream.value = null
+  }
 }
 
 // ─── Init ────────────────────────────────────────────
@@ -315,6 +349,7 @@ onMounted(() => {
 onUnmounted(() => {
   stopQueuePolling()
   if (currentStream.value) currentStream.value.close()
+  if (currentMatchStream.value) currentMatchStream.value.close()
 })
 </script>
 
